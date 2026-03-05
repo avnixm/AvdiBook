@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.avnixm.avdibook.ui.library.LibraryScreen
+import com.avnixm.avdibook.ui.navigation.AvdiBookApp
 import com.avnixm.avdibook.ui.theme.AvdiBookTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AvdiBookTheme {
-                LibraryScreen()
+                AvdiBookApp()
             }
         }
     }
