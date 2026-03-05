@@ -3,6 +3,8 @@ package com.avnixm.avdibook
 import android.content.Context
 import com.avnixm.avdibook.data.db.AvdiBookDatabase
 import com.avnixm.avdibook.data.prefs.AppPreferences
+import com.avnixm.avdibook.data.repository.BookDetailsRepository
+import com.avnixm.avdibook.data.repository.DefaultBookDetailsRepository
 import com.avnixm.avdibook.data.repository.DefaultLibraryRepository
 import com.avnixm.avdibook.data.repository.DefaultPlaybackRepository
 import com.avnixm.avdibook.data.repository.LibraryRepository
@@ -25,9 +27,19 @@ class AppContainer(context: Context) {
         playbackDao = database.playbackDao()
     )
 
+    val bookDetailsRepository: BookDetailsRepository = DefaultBookDetailsRepository(
+        bookDao = database.bookDao(),
+        trackDao = database.trackDao(),
+        playbackDao = database.playbackDao(),
+        bookSettingsDao = database.bookSettingsDao(),
+        bookmarkDao = database.bookmarkDao(),
+        appPreferences = appPreferences
+    )
+
     val playbackControllerFacade = PlaybackControllerFacade(
         appContext = applicationContext,
         libraryRepository = libraryRepository,
-        playbackRepository = playbackRepository
+        playbackRepository = playbackRepository,
+        bookDetailsRepository = bookDetailsRepository
     )
 }

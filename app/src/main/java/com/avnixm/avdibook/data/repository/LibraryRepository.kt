@@ -16,4 +16,6 @@ interface LibraryRepository {
     suspend fun getBook(bookId: Long): BookEntity?
 
     suspend fun getTracks(bookId: Long): List<TrackEntity>
+
+    suspend fun refreshMissingSourceFlags()
 }

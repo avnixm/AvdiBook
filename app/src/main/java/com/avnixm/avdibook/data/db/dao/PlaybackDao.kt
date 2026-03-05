@@ -14,6 +14,9 @@ interface PlaybackDao {
     @Query("SELECT * FROM playback_state WHERE bookId = :bookId LIMIT 1")
     suspend fun getPlaybackState(bookId: Long): PlaybackStateEntity?
 
+    @Query("SELECT * FROM playback_state")
+    suspend fun getAllPlaybackStates(): List<PlaybackStateEntity>
+
     @Query("SELECT * FROM playback_state WHERE bookId = :bookId LIMIT 1")
     fun observePlaybackState(bookId: Long): Flow<PlaybackStateEntity?>
 

@@ -1,17 +1,13 @@
 package com.avnixm.avdibook.ui.library
 
 import android.app.Application
-import android.os.Build
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.avnixm.avdibook.AppContainer
-import com.avnixm.avdibook.data.prefs.AppPreferences
 import com.avnixm.avdibook.data.repository.LibraryRepository
-import com.avnixm.avdibook.playback.PlaybackControllerFacade
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,22 +20,22 @@ import kotlinx.coroutines.launch
 
 class LibraryViewModel(
     application: Application,
-    private val libraryRepository: LibraryRepository,
-    private val playbackControllerFacade: PlaybackControllerFacade,
-    private val appPreferences: AppPreferences
+    private val libraryRepository: LibraryRepository
 ) : AndroidViewModel(application) {
     private val isImporting = MutableStateFlow(false)
+    private val hasSkippedImport = MutableStateFlow(false)
     private val eventsFlow = MutableSharedFlow<LibraryEvent>()
-    private var pendingBookIdForPermission: Long? = null
 
     val events: SharedFlow<LibraryEvent> = eventsFlow.asSharedFlow()
 
     val uiState: StateFlow<LibraryUiState> = combine(
         libraryRepository.observeLibrary(),
-        isImporting
-    ) { books, importing ->
+        isImporting,
+        hasSkippedImport
+    ) { books, importing, skipped ->
         LibraryUiState(
             isImporting = importing,
+            showImportOnboarding = books.isEmpty() && !skipped,
             books = books.map { item ->
                 BookWithProgressUi(
                     bookId = item.book.id,
@@ -83,63 +79,12 @@ class LibraryViewModel(
 
     fun onBookSelected(bookId: Long) {
         viewModelScope.launch {
-            val shouldRequestPermission = shouldRequestNotificationPermission()
-            if (shouldRequestPermission) {
-                pendingBookIdForPermission = bookId
-                appPreferences.setNotificationPermissionAskedOnce(true)
-                eventsFlow.emit(LibraryEvent.RequestNotificationPermission)
-                return@launch
-            }
-
-            startPlayback(bookId)
+            eventsFlow.emit(LibraryEvent.NavigateToBook(bookId))
         }
     }
 
     fun onSkipImportForNow() {
-        viewModelScope.launch {
-            eventsFlow.emit(
-                LibraryEvent.ShowMessage("No worries. You can import books any time from this screen.")
-            )
-        }
-    }
-
-    fun onNotificationPermissionResult(isGranted: Boolean) {
-        viewModelScope.launch {
-            val bookId = pendingBookIdForPermission ?: return@launch
-            pendingBookIdForPermission = null
-
-            if (!isGranted) {
-                eventsFlow.emit(
-                    LibraryEvent.ShowMessage(
-                        "Notification permission denied. Playback continues, but lockscreen controls may be limited."
-                    )
-                )
-            }
-
-            startPlayback(bookId)
-        }
-    }
-
-    private suspend fun startPlayback(bookId: Long) {
-        val result = playbackControllerFacade.playBook(bookId)
-        if (result.isSuccess) {
-            eventsFlow.emit(LibraryEvent.NavigateToNowPlaying(bookId))
-        } else {
-            eventsFlow.emit(
-                LibraryEvent.ShowMessage(
-                    result.exceptionOrNull()?.message ?: "Failed to start playback."
-                )
-            )
-        }
-    }
-
-    private suspend fun shouldRequestNotificationPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
-
-        val notificationsEnabled = NotificationManagerCompat.from(getApplication()).areNotificationsEnabled()
-        if (notificationsEnabled) return false
-
-        return !appPreferences.isNotificationPermissionAskedOnce()
+        hasSkippedImport.update { true }
     }
 
     companion object {
@@ -148,9 +93,7 @@ class LibraryViewModel(
                 initializer {
                     LibraryViewModel(
                         application = application,
-                        libraryRepository = appContainer.libraryRepository,
-                        playbackControllerFacade = appContainer.playbackControllerFacade,
-                        appPreferences = appContainer.appPreferences
+                        libraryRepository = appContainer.libraryRepository
                     )
                 }
             }
@@ -159,11 +102,11 @@ class LibraryViewModel(
 
 data class LibraryUiState(
     val isImporting: Boolean = false,
+    val showImportOnboarding: Boolean = true,
     val books: List<BookWithProgressUi> = emptyList()
 )
 
 sealed interface LibraryEvent {
-    data object RequestNotificationPermission : LibraryEvent
-    data class NavigateToNowPlaying(val bookId: Long) : LibraryEvent
+    data class NavigateToBook(val bookId: Long) : LibraryEvent
     data class ShowMessage(val message: String) : LibraryEvent
 }

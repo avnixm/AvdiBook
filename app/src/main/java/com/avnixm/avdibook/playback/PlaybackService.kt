@@ -1,14 +1,19 @@
 package com.avnixm.avdibook.playback
 
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.avnixm.avdibook.AvdiBookApplication
 import com.avnixm.avdibook.data.db.entity.PlaybackStateEntity
+import com.avnixm.avdibook.data.repository.BookDetailsRepository
 import com.avnixm.avdibook.data.repository.PlaybackRepository
+import com.avnixm.avdibook.playback.policy.AutoRewindPolicy
+import com.avnixm.avdibook.playback.policy.SleepTimerEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,23 +29,96 @@ class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaSession? = null
     private var periodicSaveJob: Job? = null
+    private var sleepTimerJob: Job? = null
+
+    private var currentBookId: Long? = null
+    private var lastPausedAtMs: Long? = null
+    private var isFadingOut = false
+
+    @Volatile
+    private var sleepTimerMode: SleepTimerMode = SleepTimerMode.OFF
+
+    @Volatile
+    private var sleepTimerEndTimestampMs: Long? = null
 
     private val playbackRepository: PlaybackRepository by lazy {
         val app = application as AvdiBookApplication
         app.appContainer.playbackRepository
     }
 
+    private val bookDetailsRepository: BookDetailsRepository by lazy {
+        val app = application as AvdiBookApplication
+        app.appContainer.bookDetailsRepository
+    }
+
+    private val bridgeController = object : PlaybackServiceBridge.Controller {
+        override fun setSleepTimerDuration(minutes: Int) {
+            if (minutes <= 0) {
+                this@PlaybackService.clearSleepTimer()
+                return
+            }
+            sleepTimerMode = SleepTimerMode.DURATION
+            sleepTimerEndTimestampMs = System.currentTimeMillis() + (minutes * 60_000L)
+        }
+
+        override fun setSleepTimerEndOfTrack() {
+            sleepTimerMode = SleepTimerMode.END_OF_TRACK
+            sleepTimerEndTimestampMs = null
+        }
+
+        override fun clearSleepTimer() {
+            this@PlaybackService.clearSleepTimer()
+        }
+
+        override fun getSleepTimerState(): SleepTimerState {
+            return currentSleepTimerState()
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (!isPlaying) {
-                persistCurrentProgress(resetToStart = false)
+            if (isPlaying) {
+                serviceScope.launch {
+                    maybeApplyAutoRewind()
+                    currentBookId?.let { applyBookSettings(it) }
+                }
+                return
             }
+
+            if (player.playbackState != Player.STATE_ENDED) {
+                lastPausedAtMs = SystemClock.elapsedRealtime()
+            }
+            persistCurrentProgress(resetToStart = false)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
-                Player.STATE_ENDED -> persistCurrentProgress(resetToStart = true)
+                Player.STATE_ENDED -> {
+                    persistCurrentProgress(resetToStart = true)
+                    if (sleepTimerMode == SleepTimerMode.END_OF_TRACK) {
+                        triggerSleepPause()
+                    }
+                }
+
                 Player.STATE_IDLE -> persistCurrentProgress(resetToStart = false)
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            currentBookId = mediaItem?.mediaMetadata?.extras.bookIdOrNull()
+            currentBookId?.let { bookId ->
+                serviceScope.launch {
+                    applyBookSettings(bookId)
+                }
+            }
+
+            if (
+                SleepTimerEngine.shouldPauseOnTrackBoundary(
+                    mode = sleepTimerMode,
+                    transitionReason = reason
+                )
+            ) {
+                triggerSleepPause()
             }
         }
     }
@@ -52,8 +130,9 @@ class PlaybackService : MediaSessionService() {
             addListener(playerListener)
         }
 
-        mediaSession = MediaSession.Builder(this, player)
-            .build()
+        mediaSession = MediaSession.Builder(this, player).build()
+
+        PlaybackServiceBridge.controller = bridgeController
 
         periodicSaveJob = serviceScope.launch {
             while (isActive) {
@@ -63,9 +142,94 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         }
+
+        sleepTimerJob = serviceScope.launch {
+            while (isActive) {
+                delay(1_000)
+                if (sleepTimerMode == SleepTimerMode.DURATION) {
+                    val endTs = sleepTimerEndTimestampMs ?: continue
+                    if (SleepTimerEngine.shouldTriggerDuration(System.currentTimeMillis(), endTs)) {
+                        triggerSleepPause()
+                    }
+                }
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+
+    private fun clearSleepTimer() {
+        sleepTimerMode = SleepTimerMode.OFF
+        sleepTimerEndTimestampMs = null
+    }
+
+    private fun currentSleepTimerState(): SleepTimerState {
+        return when (sleepTimerMode) {
+            SleepTimerMode.OFF -> SleepTimerState(mode = SleepTimerMode.OFF)
+            SleepTimerMode.END_OF_TRACK -> SleepTimerState(mode = SleepTimerMode.END_OF_TRACK)
+            SleepTimerMode.DURATION -> {
+                val endTs = sleepTimerEndTimestampMs
+                val remaining = SleepTimerEngine.remainingMs(
+                    nowMs = System.currentTimeMillis(),
+                    endTimestampMs = endTs
+                )
+                SleepTimerState(
+                    mode = SleepTimerMode.DURATION,
+                    endTimestampMs = endTs,
+                    remainingMs = remaining
+                )
+            }
+        }
+    }
+
+    private fun triggerSleepPause() {
+        serviceScope.launch {
+            fadeOutAndPause()
+            clearSleepTimer()
+        }
+    }
+
+    private suspend fun fadeOutAndPause() {
+        if (isFadingOut) return
+        isFadingOut = true
+        val originalVolume = player.volume
+
+        try {
+            if (player.isPlaying) {
+                val steps = 10
+                repeat(steps) { step ->
+                    val ratio = 1f - ((step + 1) / steps.toFloat())
+                    player.volume = (originalVolume * ratio).coerceIn(0f, 1f)
+                    delay(1_000)
+                }
+            }
+            player.pause()
+        } finally {
+            player.volume = originalVolume
+            isFadingOut = false
+        }
+    }
+
+    private suspend fun maybeApplyAutoRewind() {
+        val pausedAt = lastPausedAtMs ?: return
+        val bookId = currentBookId ?: return
+        lastPausedAtMs = null
+
+        val pausedForMs = SystemClock.elapsedRealtime() - pausedAt
+        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        if (!AutoRewindPolicy.shouldApply(pausedForMs, settings.autoRewindAfterPauseSec)) return
+
+        val targetPosition = AutoRewindPolicy.rewoundPosition(
+            currentPositionMs = player.currentPosition,
+            rewindSec = settings.autoRewindSec
+        )
+        player.seekTo(targetPosition)
+    }
+
+    private suspend fun applyBookSettings(bookId: Long) {
+        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        player.setPlaybackParameters(PlaybackParameters(settings.playbackSpeed))
+    }
 
     private fun persistCurrentProgress(resetToStart: Boolean) {
         serviceScope.launch {
@@ -96,10 +260,14 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         periodicSaveJob?.cancel()
+        sleepTimerJob?.cancel()
         player.removeListener(playerListener)
         mediaSession?.release()
         mediaSession = null
         player.release()
+        if (PlaybackServiceBridge.controller === bridgeController) {
+            PlaybackServiceBridge.controller = null
+        }
         serviceScope.cancel()
         super.onDestroy()
     }

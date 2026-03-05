@@ -1,11 +1,9 @@
 package com.avnixm.avdibook.ui.library
 
-import android.Manifest
 import android.app.Activity
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -30,6 +28,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -40,7 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,7 +55,7 @@ import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun LibraryRoute(
-    onNavigateToNowPlaying: (Long) -> Unit,
+    onNavigateToBook: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -64,12 +66,6 @@ fun LibraryRoute(
 
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        viewModel.onNotificationPermissionResult(isGranted)
-    }
 
     val folderImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -108,15 +104,8 @@ fun LibraryRoute(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                is LibraryEvent.NavigateToNowPlaying -> onNavigateToNowPlaying(event.bookId)
+                is LibraryEvent.NavigateToBook -> onNavigateToBook(event.bookId)
                 is LibraryEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
-                LibraryEvent.RequestNotificationPermission -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        viewModel.onNotificationPermissionResult(isGranted = true)
-                    }
-                }
             }
         }
     }
@@ -160,6 +149,8 @@ fun LibraryScreen(
     onBookClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -172,65 +163,66 @@ fun LibraryScreen(
                 }
             )
         },
+        bottomBar = {
+            if (!uiState.showImportOnboarding) {
+                NavigationBar {
+                    DASHBOARD_TABS.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            icon = {},
+                            label = { Text(tab) }
+                        )
+                    }
+                }
+            }
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-        ) {
-            if (uiState.books.isEmpty()) {
+        if (uiState.showImportOnboarding) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
                 EmptyLibraryCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                 )
-            } else {
-                LazyColumn(
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = onImportFolder,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .height(52.dp),
+                    enabled = !uiState.isImporting
                 ) {
-                    items(uiState.books, key = { it.bookId }) { book ->
-                        BookCard(book = book, onBookClick = onBookClick)
+                    if (uiState.isImporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Import folder")
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            Button(
-                onClick = onImportFolder,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                enabled = !uiState.isImporting
-            ) {
-                if (uiState.isImporting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Import folder")
+                OutlinedButton(
+                    onClick = onImportFiles,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    enabled = !uiState.isImporting
+                ) {
+                    Text("Import files")
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedButton(
-                onClick = onImportFiles,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                enabled = !uiState.isImporting
-            ) {
-                Text("Import files")
-            }
-
-            if (uiState.books.isEmpty()) {
                 TextButton(
                     onClick = onSkipImport,
                     modifier = Modifier.fillMaxWidth()
@@ -238,6 +230,125 @@ fun LibraryScreen(
                     Text("Skip for now")
                 }
             }
+        } else {
+            when (selectedTabIndex) {
+                0 -> DashboardLibraryTab(
+                    uiState = uiState,
+                    onImportFolder = onImportFolder,
+                    onImportFiles = onImportFiles,
+                    onBookClick = onBookClick,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                )
+
+                1 -> PlaceholderDashboardTab(
+                    title = "Now Playing",
+                    subtitle = "Playback controls open when you start a book.",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                )
+
+                2 -> PlaceholderDashboardTab(
+                    title = "Profile",
+                    subtitle = "More dashboard features can be added here.",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardLibraryTab(
+    uiState: LibraryUiState,
+    onImportFolder: () -> Unit,
+    onImportFiles: () -> Unit,
+    onBookClick: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        if (uiState.books.isEmpty()) {
+            EmptyLibraryCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(uiState.books, key = { it.bookId }) { book ->
+                    BookCard(book = book, onBookClick = onBookClick)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(
+            onClick = onImportFolder,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            enabled = !uiState.isImporting
+        ) {
+            if (uiState.isImporting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text("Import folder")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onImportFiles,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            enabled = !uiState.isImporting
+        ) {
+            Text("Import files")
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderDashboardTab(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -355,3 +466,5 @@ private fun formatTime(positionMs: Long): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+
+private val DASHBOARD_TABS = listOf("Library", "Now Playing", "Profile")

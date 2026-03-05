@@ -6,5 +6,6 @@ import com.avnixm.avdibook.data.db.entity.PlaybackStateEntity
 data class BookWithPlayback(
     val book: BookEntity,
     val playbackState: PlaybackStateEntity?,
-    val trackCount: Int
+    val trackCount: Int,
+    val progress: BookProgressData
 )

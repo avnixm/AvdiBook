@@ -18,6 +18,18 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :bookId LIMIT 1")
     suspend fun getBookById(bookId: Long): BookEntity?
 
+    @Query("SELECT * FROM books WHERE sourceUri = :sourceUri LIMIT 1")
+    suspend fun getBySourceUri(sourceUri: String): BookEntity?
+
+    @Query("SELECT * FROM books")
+    suspend fun getAllBooks(): List<BookEntity>
+
+    @Query("SELECT * FROM books WHERE id = :bookId LIMIT 1")
+    fun observeBookById(bookId: Long): Flow<BookEntity?>
+
     @Query("UPDATE books SET lastPlayedAt = :lastPlayedAt WHERE id = :bookId")
     suspend fun updateLastPlayed(bookId: Long, lastPlayedAt: Long)
+
+    @Query("UPDATE books SET isMissingSource = :isMissingSource WHERE id = :bookId")
+    suspend fun updateMissingSource(bookId: Long, isMissingSource: Boolean)
 }

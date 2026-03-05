@@ -15,5 +15,6 @@ data class BookEntity(
     val sourceType: Int,
     val sourceUri: String,
     val createdAt: Long,
-    val lastPlayedAt: Long?
+    val lastPlayedAt: Long?,
+    val isMissingSource: Boolean = false
 )
