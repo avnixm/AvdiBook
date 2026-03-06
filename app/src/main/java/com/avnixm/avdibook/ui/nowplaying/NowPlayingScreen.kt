@@ -3,7 +3,6 @@ package com.avnixm.avdibook.ui.nowplaying
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -35,18 +33,16 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Forward30
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -56,8 +52,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -75,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -97,36 +92,6 @@ import kotlinx.coroutines.flow.collectLatest
 
 private val SHEET_TABS = listOf("Chapters", "Bookmarks")
 private val SPEED_OPTIONS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun BookmarkChip(
-    onClick: () -> Unit,
-    onLongClick: () -> Unit
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                Icons.Default.BookmarkBorder,
-                contentDescription = "Add bookmark (hold for note)",
-                modifier = Modifier.size(16.dp)
-            )
-            Text("Bookmark", style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
 
 @Composable
 fun NowPlayingRoute(
@@ -265,51 +230,52 @@ fun NowPlayingScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Cover art
-            Box(
+            Spacer(Modifier.height(8.dp))
+
+            // Cover art — ElevatedCard gives Material 3 shadow + shape
+            ElevatedCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(20.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    tonalElevation = 4.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-                AsyncImage(
-                    model = uiState.coverArtPath?.let { java.io.File(it) },
-                    contentDescription = "Cover art",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    .aspectRatio(1f),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(72.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                    )
+                    AsyncImage(
+                        model = uiState.coverArtPath?.let { java.io.File(it) },
+                        contentDescription = "Cover art",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
 
-            // Book + track info
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
+            Spacer(Modifier.height(20.dp))
+
+            // Book title + track/chapter name
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = uiState.bookTitle.ifBlank { "Loading…" },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = uiState.trackTitle.ifBlank { " " },
                     style = MaterialTheme.typography.bodyMedium,
@@ -318,6 +284,8 @@ fun NowPlayingScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
 
             // Seek bar
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -357,43 +325,38 @@ fun NowPlayingScreen(
                 }
             }
 
-            // Book progress row
-            Column(modifier = Modifier.fillMaxWidth()) {
-                LinearProgressIndicator(
-                    progress = { uiState.bookProgressPercent.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (uiState.isBookProgressEstimated) "Calculating progress…"
-                    else "Book: ${(uiState.bookProgressPercent * 100).toInt()}% · ${TimeFormatters.formatHoursMinutes(uiState.timeLeftMs)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(Modifier.height(4.dp))
 
-            // Action chips row
+            // Book progress — text only, no duplicate progress bar
+            Text(
+                modifier = Modifier.fillMaxWidth(),
+                text = if (uiState.isBookProgressEstimated) "Calculating progress…"
+                else "${TimeFormatters.formatHoursMinutes(uiState.timeLeftMs)} left · ${(uiState.bookProgressPercent * 100).toInt()}% complete",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            // Secondary actions row — icon buttons replacing cramped chips
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                AssistChip(
-                    onClick = { showSpeedSheet = true },
-                    label = { Text("${uiState.speed}×") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                    }
+                SecondaryActionButton(
+                    icon = Icons.Default.Speed,
+                    label = "${uiState.speed}×",
+                    onClick = { showSpeedSheet = true }
                 )
-                AssistChip(
-                    onClick = { showSleepSheet = true },
-                    label = { Text(uiState.sleepLabel) },
-                    leadingIcon = {
-                        Icon(Icons.Default.Bedtime, contentDescription = null, modifier = Modifier.size(16.dp))
-                    }
+                SecondaryActionButton(
+                    icon = Icons.Default.Bedtime,
+                    label = uiState.sleepLabel,
+                    onClick = { showSleepSheet = true }
                 )
-                BookmarkChip(
+                SecondaryActionButton(
+                    icon = Icons.Default.BookmarkBorder,
+                    label = "Bookmark",
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onAddBookmark(null)
@@ -404,18 +367,14 @@ fun NowPlayingScreen(
                         showBookmarkSheet = true
                     }
                 )
-                if (uiState.chapters.isNotEmpty()) {
-                    AssistChip(
-                        onClick = { showBrowseSheet = true },
-                        label = { Text("Chapters") },
-                        leadingIcon = {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(16.dp))
-                        }
-                    )
-                }
+                SecondaryActionButton(
+                    icon = Icons.AutoMirrored.Filled.List,
+                    label = "Chapters",
+                    onClick = { showBrowseSheet = true }
+                )
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(Modifier.height(12.dp))
 
             // Playback controls
             PlayerControlsCluster(
@@ -436,7 +395,7 @@ fun NowPlayingScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -534,62 +493,95 @@ private fun PlayerControlsCluster(
     onSeekForward: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Row(
         modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(
+                onClick = onSeekBack,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Replay,
+                    contentDescription = "Skip back $skipBackSec seconds",
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Text(
+                text = "${skipBackSec}s",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        FilledIconButton(
+            onClick = onPlayPause,
+            modifier = Modifier.size(88.dp)
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                modifier = Modifier.size(48.dp)
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(
+                onClick = onSeekForward,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Forward30,
+                    contentDescription = "Skip forward $skipForwardSec seconds",
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Text(
+                text = "${skipForwardSec}s",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SecondaryActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.medium)
+            .then(
+                if (onLongClick != null)
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                else
+                    Modifier.clickable(onClick = onClick)
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = onSeekBack,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Replay,
-                        contentDescription = "Skip back $skipBackSec seconds",
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-                Text(
-                    text = "${skipBackSec}s",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            FilledIconButton(
-                onClick = onPlayPause,
-                modifier = Modifier.size(64.dp)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = onSeekForward,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Forward30,
-                        contentDescription = "Skip forward $skipForwardSec seconds",
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-                Text(
-                    text = "${skipForwardSec}s",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
