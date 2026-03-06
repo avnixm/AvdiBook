@@ -12,6 +12,9 @@ import com.avnixm.avdibook.data.db.entity.ChapterEntity
 import com.avnixm.avdibook.data.db.entity.TrackEntity
 import com.avnixm.avdibook.data.model.BookDetailsData
 import com.avnixm.avdibook.data.model.BookProgressCalculator
+import com.avnixm.avdibook.data.model.ListeningSettings
+import com.avnixm.avdibook.data.model.resolveListeningSettings
+import com.avnixm.avdibook.data.model.toListeningSettings
 import com.avnixm.avdibook.data.prefs.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -37,16 +40,23 @@ class DefaultBookDetailsRepository(
         ) { book, tracks, chapters, bookmarks, playbackState ->
             Triple(Pair(book, tracks), Pair(chapters, bookmarks), playbackState)
         }
-        return firstFive.combine(bookSettingsDao.observeByBook(bookId)) { (bookAndTracks, chaptersAndBookmarks, playbackState), settings ->
+        return combine(
+            firstFive,
+            bookSettingsDao.observeByBook(bookId),
+            appPreferences.listeningDefaults
+        ) { (bookAndTracks, chaptersAndBookmarks, playbackState), settingsOverride, defaults ->
             val (book, tracks) = bookAndTracks
             val (chapters, bookmarks) = chaptersAndBookmarks
+            val effectiveSettings = resolveListeningSettings(settingsOverride, defaults)
             BookDetailsData(
                 book = book,
                 tracks = tracks,
                 chapters = chapters,
                 bookmarks = bookmarks,
                 playbackState = playbackState,
-                settings = settings,
+                settings = effectiveSettings,
+                settingsOverride = settingsOverride,
+                isUsingGlobalDefaults = settingsOverride == null,
                 progress = BookProgressCalculator.calculate(
                     tracks = tracks,
                     playbackState = playbackState
@@ -55,29 +65,30 @@ class DefaultBookDetailsRepository(
         }
     }
 
-    override suspend fun getOrCreateBookSettings(bookId: Long): BookSettingsEntity = withContext(Dispatchers.IO) {
+    override suspend fun getEffectiveBookSettings(bookId: Long): ListeningSettings = withContext(Dispatchers.IO) {
+        bookSettingsDao.getByBook(bookId)?.toListeningSettings() ?: appPreferences.getListeningDefaults()
+    }
+
+    override suspend fun ensureBookSettingsOverride(bookId: Long): BookSettingsEntity = withContext(Dispatchers.IO) {
         val existing = bookSettingsDao.getByBook(bookId)
         if (existing != null) return@withContext existing
 
-        val created = BookSettingsEntity(
-            bookId = bookId,
-            playbackSpeed = appPreferences.getDefaultSpeed(),
-            skipForwardSec = appPreferences.getDefaultSkipForwardSec(),
-            skipBackSec = appPreferences.getDefaultSkipBackSec(),
-            autoRewindSec = appPreferences.getDefaultAutoRewindSec(),
-            autoRewindAfterPauseSec = appPreferences.getDefaultAutoRewindAfterPauseSec(),
-            useLoudnessBoost = appPreferences.getDefaultUseLoudnessBoost(),
-            updatedAt = System.currentTimeMillis()
-        )
+        val created = getEffectiveBookSettings(bookId).toEntity(bookId = bookId)
         bookSettingsDao.upsert(created)
         created
     }
 
-    override suspend fun upsertBookSettings(settings: BookSettingsEntity) {
+    override suspend fun upsertBookSettingsOverride(settings: BookSettingsEntity) {
         withContext(Dispatchers.IO) {
             bookSettingsDao.upsert(
                 settings.copy(updatedAt = System.currentTimeMillis())
             )
+        }
+    }
+
+    override suspend fun resetBookSettingsToGlobal(bookId: Long) {
+        withContext(Dispatchers.IO) {
+            bookSettingsDao.deleteByBook(bookId)
         }
     }
 

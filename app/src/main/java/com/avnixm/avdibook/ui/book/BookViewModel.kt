@@ -106,16 +106,15 @@ class BookViewModel(
                     trackTitle = trackTitle
                 )
             },
-            settings = settings?.let {
-                BookSettingsUi(
-                    playbackSpeed = it.playbackSpeed,
-                    skipForwardSec = it.skipForwardSec,
-                    skipBackSec = it.skipBackSec,
-                    autoRewindSec = it.autoRewindSec,
-                    autoRewindAfterPauseSec = it.autoRewindAfterPauseSec,
-                    useLoudnessBoost = it.useLoudnessBoost
-                )
-            },
+            settings = BookSettingsUi(
+                playbackSpeed = settings.playbackSpeed,
+                skipForwardSec = settings.skipForwardSec,
+                skipBackSec = settings.skipBackSec,
+                autoRewindSec = settings.autoRewindSec,
+                autoRewindAfterPauseSec = settings.autoRewindAfterPauseSec,
+                useLoudnessBoost = settings.useLoudnessBoost,
+                isUsingGlobalDefaults = details.isUsingGlobalDefaults
+            ),
             hasPlaybackState = details.playbackState != null,
             bookProgressPercent = details.progress.percent,
             timeLeftMs = details.progress.remainingMs,
@@ -130,10 +129,6 @@ class BookViewModel(
     )
 
     init {
-        viewModelScope.launch {
-            bookDetailsRepository.getOrCreateBookSettings(bookId)
-        }
-
         if (autoPlay) {
             viewModelScope.launch {
                 uiState.first { !it.isLoading }
@@ -249,6 +244,19 @@ class BookViewModel(
         }
     }
 
+    fun customizeSettingsForBook() {
+        viewModelScope.launch {
+            bookDetailsRepository.ensureBookSettingsOverride(bookId)
+        }
+    }
+
+    fun resetSettingsToGlobal() {
+        viewModelScope.launch {
+            bookDetailsRepository.resetBookSettingsToGlobal(bookId)
+            playbackControllerFacade.applyBookSettingsIfCurrent(bookId)
+        }
+    }
+
     private fun requestPlayback(request: PendingPlaybackRequest) {
         viewModelScope.launch {
             if (latestDetails?.book?.isMissingSource == true) {
@@ -292,8 +300,8 @@ class BookViewModel(
     }
 
     private suspend fun mutateSettings(change: (BookSettingsEntity) -> BookSettingsEntity) {
-        val current = bookDetailsRepository.getOrCreateBookSettings(bookId)
-        bookDetailsRepository.upsertBookSettings(change(current))
+        val current = bookDetailsRepository.ensureBookSettingsOverride(bookId)
+        bookDetailsRepository.upsertBookSettingsOverride(change(current))
     }
 
     private suspend fun shouldRequestNotificationPermission(): Boolean {

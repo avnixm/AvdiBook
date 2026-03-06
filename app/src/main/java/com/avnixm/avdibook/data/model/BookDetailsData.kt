@@ -13,6 +13,8 @@ data class BookDetailsData(
     val chapters: List<ChapterEntity>,
     val bookmarks: List<BookmarkEntity>,
     val playbackState: PlaybackStateEntity?,
-    val settings: BookSettingsEntity?,
+    val settings: ListeningSettings,
+    val settingsOverride: BookSettingsEntity?,
+    val isUsingGlobalDefaults: Boolean,
     val progress: BookProgressData
 )

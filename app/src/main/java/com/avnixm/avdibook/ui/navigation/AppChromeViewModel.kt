@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.avnixm.avdibook.AppContainer
+import com.avnixm.avdibook.data.model.ListeningSettings
 import com.avnixm.avdibook.data.prefs.AppPreferences
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,9 @@ data class AppChromeUiState(
     val themeMode: AppPreferences.ThemeMode = AppPreferences.ThemeMode.SYSTEM,
     val dynamicColorEnabled: Boolean = true,
     val pureBlackDarkEnabled: Boolean = false,
+    val listeningDefaults: ListeningSettings = ListeningSettings(),
+    val textScalePreset: AppPreferences.TextScalePreset = AppPreferences.TextScalePreset.STANDARD,
+    val reducedMotionEnabled: Boolean = false,
     val miniPlayer: MiniPlayerUiState = MiniPlayerUiState()
 )
 
@@ -51,14 +55,19 @@ class AppChromeViewModel(
         appPreferences.themeMode,
         appPreferences.dynamicColorEnabled,
         appPreferences.pureBlackDarkEnabled,
+        appPreferences.listeningDefaults,
+        appPreferences.accessibilitySettings,
         miniPlayerState
-    ) { onboardingCompleted, themeMode, dynamicColorEnabled, pureBlackDarkEnabled, miniPlayer ->
+    ) { onboardingCompleted, themeMode, dynamicColorEnabled, pureBlackDarkEnabled, listeningDefaults, accessibilitySettings, miniPlayer ->
         AppChromeUiState(
             isInitializing = false,
             onboardingCompleted = onboardingCompleted,
             themeMode = themeMode,
             dynamicColorEnabled = dynamicColorEnabled,
             pureBlackDarkEnabled = pureBlackDarkEnabled,
+            listeningDefaults = listeningDefaults,
+            textScalePreset = accessibilitySettings.textScalePreset,
+            reducedMotionEnabled = accessibilitySettings.reducedMotionEnabled,
             miniPlayer = miniPlayer
         )
     }.stateIn(
@@ -124,6 +133,54 @@ class AppChromeViewModel(
     fun setPureBlackDarkEnabled(value: Boolean) {
         viewModelScope.launch {
             appPreferences.setPureBlackDarkEnabled(value)
+        }
+    }
+
+    fun setDefaultSpeed(value: Float) {
+        viewModelScope.launch {
+            appPreferences.setDefaultSpeed(value)
+        }
+    }
+
+    fun setDefaultSkipBackSec(value: Int) {
+        viewModelScope.launch {
+            appPreferences.setDefaultSkipBackSec(value)
+        }
+    }
+
+    fun setDefaultSkipForwardSec(value: Int) {
+        viewModelScope.launch {
+            appPreferences.setDefaultSkipForwardSec(value)
+        }
+    }
+
+    fun setDefaultAutoRewindSec(value: Int) {
+        viewModelScope.launch {
+            appPreferences.setDefaultAutoRewindSec(value)
+        }
+    }
+
+    fun setDefaultAutoRewindAfterPauseSec(value: Int) {
+        viewModelScope.launch {
+            appPreferences.setDefaultAutoRewindAfterPauseSec(value)
+        }
+    }
+
+    fun setDefaultUseLoudnessBoost(value: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setDefaultUseLoudnessBoost(value)
+        }
+    }
+
+    fun setTextScalePreset(value: AppPreferences.TextScalePreset) {
+        viewModelScope.launch {
+            appPreferences.setTextScalePreset(value)
+        }
+    }
+
+    fun setReducedMotionEnabled(value: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setReducedMotionEnabled(value)
         }
     }
 

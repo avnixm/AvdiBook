@@ -54,7 +54,7 @@ class PlaybackControllerFacade(
         controller.setMediaItems(mediaItems, startIndex, startPosition)
         controller.prepare()
 
-        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        val settings = bookDetailsRepository.getEffectiveBookSettings(bookId)
         controller.setPlaybackParameters(PlaybackParameters(settings.playbackSpeed))
         controller.play()
 
@@ -126,7 +126,7 @@ class PlaybackControllerFacade(
 
         if (currentBookId != bookId) return
 
-        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        val settings = bookDetailsRepository.getEffectiveBookSettings(bookId)
         controller.setPlaybackParameters(PlaybackParameters(settings.playbackSpeed))
     }
 

@@ -5,14 +5,19 @@ import com.avnixm.avdibook.data.db.entity.BookmarkEntity
 import com.avnixm.avdibook.data.db.entity.ChapterEntity
 import com.avnixm.avdibook.data.db.entity.TrackEntity
 import com.avnixm.avdibook.data.model.BookDetailsData
+import com.avnixm.avdibook.data.model.ListeningSettings
 import kotlinx.coroutines.flow.Flow
 
 interface BookDetailsRepository {
     fun observeBookDetails(bookId: Long): Flow<BookDetailsData>
 
-    suspend fun getOrCreateBookSettings(bookId: Long): BookSettingsEntity
+    suspend fun getEffectiveBookSettings(bookId: Long): ListeningSettings
 
-    suspend fun upsertBookSettings(settings: BookSettingsEntity)
+    suspend fun ensureBookSettingsOverride(bookId: Long): BookSettingsEntity
+
+    suspend fun upsertBookSettingsOverride(settings: BookSettingsEntity)
+
+    suspend fun resetBookSettingsToGlobal(bookId: Long)
 
     suspend fun addBookmark(
         bookId: Long,

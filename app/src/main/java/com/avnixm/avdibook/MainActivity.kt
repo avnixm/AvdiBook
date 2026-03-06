@@ -53,7 +53,9 @@ class MainActivity : ComponentActivity() {
             AvdiBookTheme(
                 darkTheme = darkTheme,
                 dynamicColor = chromeUiState.dynamicColorEnabled,
-                pureBlackDark = chromeUiState.pureBlackDarkEnabled
+                pureBlackDark = chromeUiState.pureBlackDarkEnabled,
+                textScalePreset = chromeUiState.textScalePreset,
+                reducedMotionEnabled = chromeUiState.reducedMotionEnabled
             ) {
                 AvdiBookApp(
                     appContainer = application.appContainer,
@@ -62,6 +64,14 @@ class MainActivity : ComponentActivity() {
                     onThemeModeChanged = chromeViewModel::setThemeMode,
                     onDynamicColorChanged = chromeViewModel::setDynamicColorEnabled,
                     onPureBlackChanged = chromeViewModel::setPureBlackDarkEnabled,
+                    onDefaultSpeedChanged = chromeViewModel::setDefaultSpeed,
+                    onDefaultSkipBackChanged = chromeViewModel::setDefaultSkipBackSec,
+                    onDefaultSkipForwardChanged = chromeViewModel::setDefaultSkipForwardSec,
+                    onDefaultAutoRewindChanged = chromeViewModel::setDefaultAutoRewindSec,
+                    onDefaultAutoRewindThresholdChanged = chromeViewModel::setDefaultAutoRewindAfterPauseSec,
+                    onDefaultUseLoudnessBoostChanged = chromeViewModel::setDefaultUseLoudnessBoost,
+                    onTextScalePresetChanged = chromeViewModel::setTextScalePreset,
+                    onReducedMotionChanged = chromeViewModel::setReducedMotionEnabled,
                     onMiniPlayerTogglePlayPause = chromeViewModel::toggleMiniPlayerPlayPause,
                     onMiniPlayerSkipBack = chromeViewModel::miniPlayerSkipBack,
                     onMiniPlayerSkipForward = chromeViewModel::miniPlayerSkipForward

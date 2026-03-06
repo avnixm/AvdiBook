@@ -65,7 +65,6 @@ class NowPlayingViewModel(
                 controller = playbackControllerFacade.connectController().also {
                     it.addListener(playerListener)
                 }
-                bookDetailsRepository.getOrCreateBookSettings(bookId)
                 refreshPlayerState()
             }.onFailure { e ->
                 Log.e("NowPlayingVM", "init connectController failed", e)
@@ -113,7 +112,29 @@ class NowPlayingViewModel(
     fun setSpeed(speed: Float) {
         viewModelScope.launch {
             playbackControllerFacade.setSpeed(speed)
-            mutateSettings { current -> current.copy(playbackSpeed = speed) }
+            val details = latestDetails ?: return@launch
+            val updated = NowPlayingSettingsPolicy.quickSpeedOverride(
+                bookId = bookId,
+                currentOverride = details.settingsOverride,
+                effectiveSettings = details.settings,
+                speed = speed,
+                nowMs = System.currentTimeMillis()
+            )
+            bookDetailsRepository.upsertBookSettingsOverride(updated)
+            refreshPlayerState()
+        }
+    }
+
+    fun customizeSettingsForBook() {
+        viewModelScope.launch {
+            bookDetailsRepository.ensureBookSettingsOverride(bookId)
+        }
+    }
+
+    fun resetSettingsToGlobal() {
+        viewModelScope.launch {
+            bookDetailsRepository.resetBookSettingsToGlobal(bookId)
+            playbackControllerFacade.applyBookSettingsIfCurrent(bookId)
             refreshPlayerState()
         }
     }
@@ -326,9 +347,10 @@ class NowPlayingViewModel(
                 tracks = mappedTracks,
                 chapters = chapters,
                 bookmarks = mappedBookmarks,
-                skipBackSec = settings?.skipBackSec ?: current.skipBackSec,
-                skipForwardSec = settings?.skipForwardSec ?: current.skipForwardSec,
-                speed = settings?.playbackSpeed ?: current.speed,
+                skipBackSec = settings.skipBackSec,
+                skipForwardSec = settings.skipForwardSec,
+                speed = settings.playbackSpeed,
+                isUsingGlobalDefaults = details.isUsingGlobalDefaults,
                 bookProgressMs = computedProgress.progressMs,
                 bookTotalMs = computedProgress.totalMs,
                 timeLeftMs = computedProgress.remainingMs,
@@ -349,11 +371,6 @@ class NowPlayingViewModel(
         val currentIndex = sorted.indexOfFirst { it.id == currentTrackId }.takeIf { it >= 0 } ?: 0
         val previous = sorted.take(currentIndex).sumOf { it.durationMs ?: 0L }
         return (previous + currentTrackPositionMs.coerceAtLeast(0L)).coerceAtLeast(0L)
-    }
-
-    private suspend fun mutateSettings(change: (BookSettingsEntity) -> BookSettingsEntity) {
-        val current = bookDetailsRepository.getOrCreateBookSettings(bookId)
-        bookDetailsRepository.upsertBookSettings(change(current))
     }
 
     override fun onCleared() {
@@ -393,5 +410,24 @@ private fun com.avnixm.avdibook.playback.SleepTimerState.toLabel(): String {
             val minutes = ((remainingMs ?: 0L) / 60_000L).coerceAtLeast(0L)
             if (minutes <= 0) "<1 min" else "${minutes} min"
         }
+    }
+}
+
+internal object NowPlayingSettingsPolicy {
+    fun quickSpeedOverride(
+        bookId: Long,
+        currentOverride: BookSettingsEntity?,
+        effectiveSettings: com.avnixm.avdibook.data.model.ListeningSettings,
+        speed: Float,
+        nowMs: Long
+    ): BookSettingsEntity {
+        val base = currentOverride ?: effectiveSettings.toEntity(
+            bookId = bookId,
+            updatedAt = nowMs
+        )
+        return base.copy(
+            playbackSpeed = speed,
+            updatedAt = nowMs
+        )
     }
 }

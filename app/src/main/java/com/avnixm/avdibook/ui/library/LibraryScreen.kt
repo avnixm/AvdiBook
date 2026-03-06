@@ -86,6 +86,9 @@ import coil.compose.AsyncImage
 import com.avnixm.avdibook.AvdiBookApplication
 import com.avnixm.avdibook.ui.common.EmptyState
 import com.avnixm.avdibook.ui.common.TimeFormatters
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.ArtworkTile
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
 import kotlinx.coroutines.flow.collectLatest
 
 private enum class SortMode(val label: String) {
@@ -191,7 +194,10 @@ fun LibraryScreen(
     onContinueClick: (Long) -> Unit = onBookClick,
     modifier: Modifier = Modifier
 ) {
-    var isGridMode by rememberSaveable { mutableStateOf(true) }
+    val windowSize = rememberAppWindowSize()
+    var isGridMode by rememberSaveable(windowSize) {
+        mutableStateOf(windowSize != AppWindowSize.COMPACT)
+    }
     var showSortSheet by rememberSaveable { mutableStateOf(false) }
     var showImportSheet by rememberSaveable { mutableStateOf(false) }
     var sortMode by rememberSaveable { mutableStateOf(SortMode.RECENT) }
@@ -267,6 +273,7 @@ fun LibraryScreen(
                 books = filteredAndSortedBooks,
                 allBooksEmpty = uiState.books.isEmpty(),
                 isGridMode = isGridMode,
+                windowSize = windowSize,
                 activeFilter = activeFilter,
                 onFilterSelected = { activeFilter = it },
                 onBookClick = onBookClick,
@@ -317,6 +324,7 @@ private fun LibraryContent(
     books: List<BookWithProgressUi>,
     allBooksEmpty: Boolean,
     isGridMode: Boolean,
+    windowSize: AppWindowSize,
     activeFilter: LibraryFilter,
     onFilterSelected: (LibraryFilter) -> Unit,
     onBookClick: (Long) -> Unit,
@@ -370,8 +378,13 @@ private fun LibraryContent(
                 )
             }
         } else if (isGridMode) {
+            val columns = when (windowSize) {
+                AppWindowSize.COMPACT -> 2
+                AppWindowSize.MEDIUM -> 3
+                AppWindowSize.EXPANDED -> 4
+            }
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(columns),
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp),
@@ -418,7 +431,6 @@ private fun BookCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column {
-            // Cover art
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -426,23 +438,8 @@ private fun BookCard(
                     .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Book,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-                AsyncImage(
-                    model = book.coverArtPath?.let { java.io.File(it) },
-                    contentDescription = "Cover art",
-                    contentScale = ContentScale.Crop,
+                ArtworkTile(
+                    imagePath = book.coverArtPath,
                     modifier = Modifier.fillMaxSize()
                 )
                 // Progress bar overlay at bottom of cover
@@ -554,33 +551,10 @@ private fun BookRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Cover thumbnail
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Book,
-                                contentDescription = null,
-                                modifier = Modifier.size(28.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
-                    AsyncImage(
-                        model = book.coverArtPath?.let { java.io.File(it) },
-                        contentDescription = "Cover art",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                ArtworkTile(
+                    imagePath = book.coverArtPath,
+                    modifier = Modifier.size(56.dp)
+                )
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

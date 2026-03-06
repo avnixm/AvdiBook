@@ -3,6 +3,7 @@ package com.avnixm.avdibook.data.model
 data class BackupPayloadV1(
     val schemaVersion: Int,
     val exportedAt: Long,
+    val appPreferences: BackupAppPreferences? = null,
     val books: List<BackupBook>,
     val tracks: List<BackupTrack>,
     val playbackStates: List<BackupPlaybackState>,
@@ -44,6 +45,20 @@ data class BackupPayloadV1(
         val autoRewindAfterPauseSec: Int,
         val useLoudnessBoost: Boolean,
         val updatedAt: Long
+    )
+
+    data class BackupAppPreferences(
+        val themeMode: Int,
+        val dynamicColorEnabled: Boolean,
+        val pureBlackDarkEnabled: Boolean,
+        val playbackSpeed: Float,
+        val skipForwardSec: Int,
+        val skipBackSec: Int,
+        val autoRewindSec: Int,
+        val autoRewindAfterPauseSec: Int,
+        val useLoudnessBoost: Boolean,
+        val textScalePreset: Int,
+        val reducedMotionEnabled: Boolean
     )
 
     data class BackupBookmark(

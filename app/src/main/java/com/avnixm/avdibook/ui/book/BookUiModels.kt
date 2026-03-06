@@ -32,7 +32,8 @@ data class BookSettingsUi(
     val skipBackSec: Int,
     val autoRewindSec: Int,
     val autoRewindAfterPauseSec: Int,
-    val useLoudnessBoost: Boolean
+    val useLoudnessBoost: Boolean,
+    val isUsingGlobalDefaults: Boolean
 )
 
 data class BookUiState(

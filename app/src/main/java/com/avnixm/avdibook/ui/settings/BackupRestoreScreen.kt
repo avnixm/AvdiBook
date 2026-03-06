@@ -48,6 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.avnixm.avdibook.AvdiBookApplication
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
 import com.avnixm.avdibook.ui.library.LibraryEvent
 import com.avnixm.avdibook.ui.library.LibraryViewModel
 import kotlinx.coroutines.flow.collectLatest
@@ -67,6 +69,12 @@ fun BackupRestoreRoute(
     val snackbarHostState = remember { SnackbarHostState() }
     var isLoading by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf<String?>(null) }
+    val windowSize = rememberAppWindowSize()
+    val horizontalPadding = when (windowSize) {
+        AppWindowSize.COMPACT -> 16.dp
+        AppWindowSize.MEDIUM -> 24.dp
+        AppWindowSize.EXPANDED -> 40.dp
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -112,7 +120,7 @@ fun BackupRestoreRoute(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp)
+                .padding(horizontal = horizontalPadding, vertical = 16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

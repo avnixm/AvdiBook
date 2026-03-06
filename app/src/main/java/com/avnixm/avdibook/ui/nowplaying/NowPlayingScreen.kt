@@ -57,6 +57,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +89,9 @@ import com.avnixm.avdibook.ui.book.BookmarkUi
 import com.avnixm.avdibook.ui.book.ChapterUi
 import com.avnixm.avdibook.ui.common.EmptyState
 import com.avnixm.avdibook.ui.common.TimeFormatters
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.ArtworkTile
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
 import kotlinx.coroutines.flow.collectLatest
 
 private val SHEET_TABS = listOf("Chapters", "Bookmarks")
@@ -135,7 +139,9 @@ fun NowPlayingRoute(
         onSetSleepEndOfTrack = viewModel::setSleepEndOfTrack,
         onClearSleepTimer = viewModel::clearSleepTimer,
         onChapterSelected = viewModel::onChapterSelected,
-        onBookmarkSelected = viewModel::onBookmarkSelected
+        onBookmarkSelected = viewModel::onBookmarkSelected,
+        onCustomizeForBook = viewModel::customizeSettingsForBook,
+        onResetToGlobal = viewModel::resetSettingsToGlobal
     )
 }
 
@@ -175,9 +181,22 @@ fun NowPlayingScreen(
     onClearSleepTimer: () -> Unit,
     onChapterSelected: (Long) -> Unit,
     onBookmarkSelected: (Long, Long) -> Unit,
+    onCustomizeForBook: () -> Unit,
+    onResetToGlobal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
+    val windowSize = rememberAppWindowSize()
+    val horizontalPadding = when (windowSize) {
+        AppWindowSize.COMPACT -> 24.dp
+        AppWindowSize.MEDIUM -> 40.dp
+        AppWindowSize.EXPANDED -> 56.dp
+    }
+    val artworkWidthFraction = when (windowSize) {
+        AppWindowSize.COMPACT -> 1f
+        AppWindowSize.MEDIUM -> 0.82f
+        AppWindowSize.EXPANDED -> 0.68f
+    }
 
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showSleepSheet by remember { mutableStateOf(false) }
@@ -229,7 +248,7 @@ fun NowPlayingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = horizontalPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(8.dp))
@@ -237,7 +256,7 @@ fun NowPlayingScreen(
             // Cover art — ElevatedCard gives Material 3 shadow + shape
             ElevatedCard(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth(artworkWidthFraction)
                     .aspectRatio(1f),
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp),
                 shape = RoundedCornerShape(24.dp),
@@ -245,23 +264,10 @@ fun NowPlayingScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
-                    )
-                    AsyncImage(
-                        model = uiState.coverArtPath?.let { java.io.File(it) },
-                        contentDescription = "Cover art",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                ArtworkTile(
+                    imagePath = uiState.coverArtPath,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             Spacer(Modifier.height(20.dp))
@@ -335,6 +341,18 @@ fun NowPlayingScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                text = if (uiState.isUsingGlobalDefaults) {
+                    "Using global listening defaults"
+                } else {
+                    "Customized listening for this book"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
 
             Spacer(Modifier.weight(1f))
 
@@ -407,6 +425,9 @@ fun NowPlayingScreen(
         ) {
             SpeedPickerSheetContent(
                 currentSpeed = uiState.speed,
+                isUsingGlobalDefaults = uiState.isUsingGlobalDefaults,
+                onCustomizeForBook = onCustomizeForBook,
+                onResetToGlobal = onResetToGlobal,
                 onSpeedSelected = { speed ->
                     onSetSpeed(speed)
                     showSpeedSheet = false
@@ -588,6 +609,9 @@ private fun SecondaryActionButton(
 @Composable
 private fun SpeedPickerSheetContent(
     currentSpeed: Float,
+    isUsingGlobalDefaults: Boolean,
+    onCustomizeForBook: () -> Unit,
+    onResetToGlobal: () -> Unit,
     onSpeedSelected: (Float) -> Unit
 ) {
     Column(
@@ -603,11 +627,26 @@ private fun SpeedPickerSheetContent(
             modifier = Modifier.padding(bottom = 8.dp)
         )
         Text(
-            "Saved for this book",
+            if (isUsingGlobalDefaults) "Using global defaults. Speed changes here create a per-book override."
+            else "Customized for this book",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 12.dp)
         )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 8.dp)
+        ) {
+            if (isUsingGlobalDefaults) {
+                OutlinedButton(onClick = onCustomizeForBook) {
+                    Text("Customize this book")
+                }
+            } else {
+                OutlinedButton(onClick = onResetToGlobal) {
+                    Text("Reset to global")
+                }
+            }
+        }
         SPEED_OPTIONS.forEach { speed ->
             ListItem(
                 headlineContent = { Text("${speed}×") },

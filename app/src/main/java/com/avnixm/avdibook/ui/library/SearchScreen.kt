@@ -55,6 +55,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.avnixm.avdibook.AppContainer
 import com.avnixm.avdibook.ui.common.EmptyState
 import com.avnixm.avdibook.ui.common.TimeFormatters
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +74,12 @@ fun SearchRoute(
     var query by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val windowSize = rememberAppWindowSize()
+    val horizontalPadding = when (windowSize) {
+        AppWindowSize.COMPACT -> 16.dp
+        AppWindowSize.MEDIUM -> 24.dp
+        AppWindowSize.EXPANDED -> 40.dp
+    }
 
     val filtered = remember(uiState.books, query) {
         if (query.isBlank()) uiState.books
@@ -108,7 +116,7 @@ fun SearchRoute(
                 onValueChange = { query = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = horizontalPadding, vertical = 8.dp)
                     .focusRequester(focusRequester),
                 placeholder = { Text("Search by title or author…") },
                 leadingIcon = {

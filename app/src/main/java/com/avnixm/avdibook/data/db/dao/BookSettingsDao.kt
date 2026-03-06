@@ -14,6 +14,9 @@ interface BookSettingsDao {
     @Query("SELECT * FROM book_settings WHERE bookId = :bookId LIMIT 1")
     suspend fun getByBook(bookId: Long): BookSettingsEntity?
 
+    @Query("DELETE FROM book_settings WHERE bookId = :bookId")
+    suspend fun deleteByBook(bookId: Long)
+
     @Query("SELECT * FROM book_settings")
     suspend fun getAll(): List<BookSettingsEntity>
 

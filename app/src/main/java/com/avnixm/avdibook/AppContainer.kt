@@ -50,7 +50,8 @@ class AppContainer(context: Context) {
     val backupRepository: BackupRepository = DefaultBackupRepository(
         appContext = applicationContext,
         database = database,
-        libraryRepository = libraryRepository
+        libraryRepository = libraryRepository,
+        appPreferences = appPreferences
     )
 
     val playbackControllerFacade = PlaybackControllerFacade(

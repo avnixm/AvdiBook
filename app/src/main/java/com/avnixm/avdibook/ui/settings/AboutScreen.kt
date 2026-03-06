@@ -1,6 +1,10 @@
 package com.avnixm.avdibook.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
+import com.avnixm.avdibook.ui.theme.LocalReducedMotion
 
 private data class FaqItem(val question: String, val answer: String)
 
@@ -72,6 +79,13 @@ fun AboutRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val windowSize = rememberAppWindowSize()
+    val horizontalPadding = when (windowSize) {
+        AppWindowSize.COMPACT -> 16.dp
+        AppWindowSize.MEDIUM -> 24.dp
+        AppWindowSize.EXPANDED -> 40.dp
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -124,12 +138,12 @@ fun AboutRoute(
                 "Frequently Asked Questions",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 12.dp)
             )
 
             FAQ_ITEMS.forEach { item ->
                 FaqExpandableItem(item = item)
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = horizontalPadding))
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -138,13 +152,13 @@ fun AboutRoute(
                 "Privacy",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 12.dp)
             )
 
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = horizontalPadding),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -166,6 +180,7 @@ fun AboutRoute(
 @Composable
 private fun FaqExpandableItem(item: FaqItem) {
     var expanded by remember { mutableStateOf(false) }
+    val reducedMotionEnabled = LocalReducedMotion.current
 
     Column(
         modifier = Modifier
@@ -183,7 +198,11 @@ private fun FaqExpandableItem(item: FaqItem) {
                 )
             }
         )
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = if (reducedMotionEnabled) EnterTransition.None else fadeIn(),
+            exit = if (reducedMotionEnabled) ExitTransition.None else fadeOut()
+        ) {
             Text(
                 text = item.answer,
                 style = MaterialTheme.typography.bodySmall,

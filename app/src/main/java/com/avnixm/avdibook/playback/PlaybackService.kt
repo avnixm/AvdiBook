@@ -223,7 +223,7 @@ class PlaybackService : MediaSessionService() {
 
         val pausedForMs = SystemClock.elapsedRealtime() - pausedAt
         val settings = withContext(Dispatchers.IO) {
-            bookDetailsRepository.getOrCreateBookSettings(bookId)
+            bookDetailsRepository.getEffectiveBookSettings(bookId)
         }
         if (!AutoRewindPolicy.shouldApply(pausedForMs, settings.autoRewindAfterPauseSec)) return
 
@@ -237,7 +237,7 @@ class PlaybackService : MediaSessionService() {
 
     private suspend fun applyBookSettings(bookId: Long) {
         val settings = withContext(Dispatchers.IO) {
-            bookDetailsRepository.getOrCreateBookSettings(bookId)
+            bookDetailsRepository.getEffectiveBookSettings(bookId)
         }
         player.setPlaybackParameters(PlaybackParameters(settings.playbackSpeed))
     }

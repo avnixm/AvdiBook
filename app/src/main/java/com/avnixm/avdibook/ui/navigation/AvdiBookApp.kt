@@ -1,14 +1,19 @@
 package com.avnixm.avdibook.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -17,6 +22,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -27,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -47,6 +55,9 @@ import com.avnixm.avdibook.ui.onboarding.WelcomeRoute
 import com.avnixm.avdibook.ui.settings.AboutRoute
 import com.avnixm.avdibook.ui.settings.BackupRestoreRoute
 import com.avnixm.avdibook.ui.settings.SettingsRoute
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
+import com.avnixm.avdibook.ui.theme.LocalReducedMotion
 
 private const val ROUTE_WELCOME = "welcome"
 private const val ROUTE_IMPORT_METHOD = "import_method"
@@ -78,6 +89,14 @@ fun AvdiBookApp(
     onThemeModeChanged: (AppPreferences.ThemeMode) -> Unit,
     onDynamicColorChanged: (Boolean) -> Unit,
     onPureBlackChanged: (Boolean) -> Unit,
+    onDefaultSpeedChanged: (Float) -> Unit,
+    onDefaultSkipBackChanged: (Int) -> Unit,
+    onDefaultSkipForwardChanged: (Int) -> Unit,
+    onDefaultAutoRewindChanged: (Int) -> Unit,
+    onDefaultAutoRewindThresholdChanged: (Int) -> Unit,
+    onDefaultUseLoudnessBoostChanged: (Boolean) -> Unit,
+    onTextScalePresetChanged: (AppPreferences.TextScalePreset) -> Unit,
+    onReducedMotionChanged: (Boolean) -> Unit,
     onMiniPlayerTogglePlayPause: () -> Unit,
     onMiniPlayerSkipBack: () -> Unit,
     onMiniPlayerSkipForward: () -> Unit,
@@ -99,6 +118,14 @@ fun AvdiBookApp(
             onThemeModeChanged = onThemeModeChanged,
             onDynamicColorChanged = onDynamicColorChanged,
             onPureBlackChanged = onPureBlackChanged,
+            onDefaultSpeedChanged = onDefaultSpeedChanged,
+            onDefaultSkipBackChanged = onDefaultSkipBackChanged,
+            onDefaultSkipForwardChanged = onDefaultSkipForwardChanged,
+            onDefaultAutoRewindChanged = onDefaultAutoRewindChanged,
+            onDefaultAutoRewindThresholdChanged = onDefaultAutoRewindThresholdChanged,
+            onDefaultUseLoudnessBoostChanged = onDefaultUseLoudnessBoostChanged,
+            onTextScalePresetChanged = onTextScalePresetChanged,
+            onReducedMotionChanged = onReducedMotionChanged,
             onMiniPlayerTogglePlayPause = onMiniPlayerTogglePlayPause,
             onMiniPlayerSkipBack = onMiniPlayerSkipBack,
             onMiniPlayerSkipForward = onMiniPlayerSkipForward,
@@ -140,6 +167,14 @@ private fun MainAppGraph(
     onThemeModeChanged: (AppPreferences.ThemeMode) -> Unit,
     onDynamicColorChanged: (Boolean) -> Unit,
     onPureBlackChanged: (Boolean) -> Unit,
+    onDefaultSpeedChanged: (Float) -> Unit,
+    onDefaultSkipBackChanged: (Int) -> Unit,
+    onDefaultSkipForwardChanged: (Int) -> Unit,
+    onDefaultAutoRewindChanged: (Int) -> Unit,
+    onDefaultAutoRewindThresholdChanged: (Int) -> Unit,
+    onDefaultUseLoudnessBoostChanged: (Boolean) -> Unit,
+    onTextScalePresetChanged: (AppPreferences.TextScalePreset) -> Unit,
+    onReducedMotionChanged: (Boolean) -> Unit,
     onMiniPlayerTogglePlayPause: () -> Unit,
     onMiniPlayerSkipBack: () -> Unit,
     onMiniPlayerSkipForward: () -> Unit,
@@ -148,6 +183,8 @@ private fun MainAppGraph(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val reducedMotionEnabled = LocalReducedMotion.current
+    val windowSize = rememberAppWindowSize()
 
     val selectedTab = when (currentRoute) {
         ROUTE_NOW_PLAYING_EMPTY, ROUTE_NOW_PLAYING -> BottomNavTab.NOW_PLAYING
@@ -155,13 +192,14 @@ private fun MainAppGraph(
         else -> BottomNavTab.LIBRARY
     }
 
-    val hideBottomBar = currentRoute == ROUTE_SEARCH
+    val hideNavigationChrome = currentRoute == ROUTE_SEARCH
+    val isCompact = windowSize == AppWindowSize.COMPACT
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0),
         bottomBar = {
-            if (!hideBottomBar) {
+            if (isCompact && !hideNavigationChrome) {
                 Column {
                     val isOnNowPlaying = currentRoute == ROUTE_NOW_PLAYING_EMPTY ||
                         currentRoute == ROUTE_NOW_PLAYING
@@ -169,8 +207,8 @@ private fun MainAppGraph(
                         visible = chromeUiState.miniPlayer.isVisible &&
                             chromeUiState.miniPlayer.bookId != null &&
                             !isOnNowPlaying,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut()
+                        enter = if (reducedMotionEnabled) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                        exit = if (reducedMotionEnabled) ExitTransition.None else slideOutVertically { it } + fadeOut()
                     ) {
                         MiniPlayerBar(
                             state = chromeUiState.miniPlayer,
@@ -193,24 +231,7 @@ private fun MainAppGraph(
                             val isSelected = tab == selectedTab
                             NavigationBarItem(
                                 selected = isSelected,
-                                onClick = {
-                                    when (tab) {
-                                        BottomNavTab.LIBRARY -> navController.navigate(ROUTE_LIBRARY) {
-                                            popUpTo(ROUTE_LIBRARY) { inclusive = false }
-                                            launchSingleTop = true
-                                        }
-                                        BottomNavTab.NOW_PLAYING -> {
-                                            val bookId = chromeUiState.miniPlayer.bookId
-                                            val route = if (bookId != null) "now_playing/$bookId"
-                                            else ROUTE_NOW_PLAYING_EMPTY
-                                            navController.navigate(route) { launchSingleTop = true }
-                                        }
-                                        BottomNavTab.SETTINGS -> navController.navigate(ROUTE_SETTINGS) {
-                                            popUpTo(ROUTE_SETTINGS) { inclusive = false }
-                                            launchSingleTop = true
-                                        }
-                                    }
-                                },
+                                onClick = { onTabSelected(navController, tab, chromeUiState) },
                                 icon = {
                                     if (tab == BottomNavTab.NOW_PLAYING && chromeUiState.miniPlayer.isPlaying) {
                                         BadgedBox(badge = { Badge() }) {
@@ -228,98 +249,272 @@ private fun MainAppGraph(
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = ROUTE_LIBRARY,
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable(ROUTE_LIBRARY) {
-                LibraryRoute(
-                    onNavigateToBook = { bookId -> navController.navigate("book/$bookId") },
-                    onContinueBook = { bookId -> navController.navigate("book/$bookId?autoPlay=true") },
-                    onOpenSearch = { navController.navigate(ROUTE_SEARCH) }
-                )
-            }
-
-            composable(ROUTE_SEARCH) {
-                val application = LocalContext.current.applicationContext as AvdiBookApplication
-                SearchRoute(
-                    application = application,
-                    appContainer = appContainer,
-                    onBack = { navController.popBackStack() },
-                    onBookClick = { bookId -> navController.navigate("book/$bookId") }
-                )
-            }
-
-            composable(
-                route = ROUTE_BOOK,
-                arguments = listOf(
-                    navArgument("bookId") { type = NavType.LongType },
-                    navArgument("autoPlay") { type = NavType.BoolType; defaultValue = false }
-                )
-            ) { backStackEntry ->
-                val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
-                val autoPlay = backStackEntry.arguments?.getBoolean("autoPlay") ?: false
-                BookRoute(
-                    bookId = bookId,
-                    autoPlay = autoPlay,
-                    onBack = { navController.popBackStack() },
-                    onNavigateToNowPlaying = { nowPlayingBookId ->
-                        navController.navigate("now_playing/$nowPlayingBookId") {
-                            launchSingleTop = true
+        if (isCompact) {
+            MainNavHost(
+                navController = navController,
+                appContainer = appContainer,
+                chromeUiState = chromeUiState,
+                reducedMotionEnabled = reducedMotionEnabled,
+                onThemeModeChanged = onThemeModeChanged,
+                onDynamicColorChanged = onDynamicColorChanged,
+                onPureBlackChanged = onPureBlackChanged,
+                onDefaultSpeedChanged = onDefaultSpeedChanged,
+                onDefaultSkipBackChanged = onDefaultSkipBackChanged,
+                onDefaultSkipForwardChanged = onDefaultSkipForwardChanged,
+                onDefaultAutoRewindChanged = onDefaultAutoRewindChanged,
+                onDefaultAutoRewindThresholdChanged = onDefaultAutoRewindThresholdChanged,
+                onDefaultUseLoudnessBoostChanged = onDefaultUseLoudnessBoostChanged,
+                onTextScalePresetChanged = onTextScalePresetChanged,
+                onReducedMotionChanged = onReducedMotionChanged,
+                modifier = Modifier.padding(innerPadding)
+            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                if (!hideNavigationChrome) {
+                    NavigationRail {
+                        BottomNavTab.entries.forEach { tab ->
+                            val isSelected = tab == selectedTab
+                            NavigationRailItem(
+                                selected = isSelected,
+                                onClick = { onTabSelected(navController, tab, chromeUiState) },
+                                icon = {
+                                    if (tab == BottomNavTab.NOW_PLAYING && chromeUiState.miniPlayer.isPlaying) {
+                                        BadgedBox(badge = { Badge() }) {
+                                            Icon(tab.icon, contentDescription = tab.label)
+                                        }
+                                    } else {
+                                        Icon(tab.icon, contentDescription = tab.label)
+                                    }
+                                },
+                                label = { Text(tab.label) }
+                            )
                         }
                     }
-                )
+                }
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    val isOnNowPlaying = currentRoute == ROUTE_NOW_PLAYING_EMPTY ||
+                        currentRoute == ROUTE_NOW_PLAYING
+                    AnimatedVisibility(
+                        visible = chromeUiState.miniPlayer.isVisible &&
+                            chromeUiState.miniPlayer.bookId != null &&
+                            !isOnNowPlaying,
+                        enter = if (reducedMotionEnabled) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                        exit = if (reducedMotionEnabled) ExitTransition.None else slideOutVertically { it } + fadeOut()
+                    ) {
+                        MiniPlayerBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            state = chromeUiState.miniPlayer,
+                            onOpenPlayer = {
+                                val bookId = chromeUiState.miniPlayer.bookId
+                                if (bookId != null) {
+                                    navController.navigate("now_playing/$bookId") {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
+                            onTogglePlayPause = onMiniPlayerTogglePlayPause,
+                            onSkipBack = onMiniPlayerSkipBack,
+                            onSkipForward = onMiniPlayerSkipForward
+                        )
+                    }
+                    MainNavHost(
+                        navController = navController,
+                        appContainer = appContainer,
+                        chromeUiState = chromeUiState,
+                        reducedMotionEnabled = reducedMotionEnabled,
+                        onThemeModeChanged = onThemeModeChanged,
+                        onDynamicColorChanged = onDynamicColorChanged,
+                        onPureBlackChanged = onPureBlackChanged,
+                        onDefaultSpeedChanged = onDefaultSpeedChanged,
+                        onDefaultSkipBackChanged = onDefaultSkipBackChanged,
+                        onDefaultSkipForwardChanged = onDefaultSkipForwardChanged,
+                        onDefaultAutoRewindChanged = onDefaultAutoRewindChanged,
+                        onDefaultAutoRewindThresholdChanged = onDefaultAutoRewindThresholdChanged,
+                        onDefaultUseLoudnessBoostChanged = onDefaultUseLoudnessBoostChanged,
+                        onTextScalePresetChanged = onTextScalePresetChanged,
+                        onReducedMotionChanged = onReducedMotionChanged,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
+        }
+    }
+}
 
-            composable(ROUTE_NOW_PLAYING_EMPTY) {
-                NowPlayingEmptyScreen(
-                    onGoToLibrary = {
+private fun onTabSelected(
+    navController: NavHostController,
+    tab: BottomNavTab,
+    chromeUiState: AppChromeUiState
+) {
+    when (tab) {
+        BottomNavTab.LIBRARY -> navController.navigate(ROUTE_LIBRARY) {
+            popUpTo(ROUTE_LIBRARY) { inclusive = false }
+            launchSingleTop = true
+        }
+        BottomNavTab.NOW_PLAYING -> {
+            val bookId = chromeUiState.miniPlayer.bookId
+            val route = if (bookId != null) "now_playing/$bookId"
+            else ROUTE_NOW_PLAYING_EMPTY
+            navController.navigate(route) { launchSingleTop = true }
+        }
+        BottomNavTab.SETTINGS -> navController.navigate(ROUTE_SETTINGS) {
+            popUpTo(ROUTE_SETTINGS) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+}
+
+@Composable
+private fun MainNavHost(
+    navController: NavHostController,
+    appContainer: AppContainer,
+    chromeUiState: AppChromeUiState,
+    reducedMotionEnabled: Boolean,
+    onThemeModeChanged: (AppPreferences.ThemeMode) -> Unit,
+    onDynamicColorChanged: (Boolean) -> Unit,
+    onPureBlackChanged: (Boolean) -> Unit,
+    onDefaultSpeedChanged: (Float) -> Unit,
+    onDefaultSkipBackChanged: (Int) -> Unit,
+    onDefaultSkipForwardChanged: (Int) -> Unit,
+    onDefaultAutoRewindChanged: (Int) -> Unit,
+    onDefaultAutoRewindThresholdChanged: (Int) -> Unit,
+    onDefaultUseLoudnessBoostChanged: (Boolean) -> Unit,
+    onTextScalePresetChanged: (AppPreferences.TextScalePreset) -> Unit,
+    onReducedMotionChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    NavHost(
+        navController = navController,
+        startDestination = ROUTE_LIBRARY,
+        modifier = modifier,
+        enterTransition = {
+            if (reducedMotionEnabled) EnterTransition.None
+            else fadeIn() + slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start
+            )
+        },
+        exitTransition = {
+            if (reducedMotionEnabled) ExitTransition.None
+            else fadeOut() + slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Start
+            )
+        },
+        popEnterTransition = {
+            if (reducedMotionEnabled) EnterTransition.None
+            else fadeIn() + slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.End
+            )
+        },
+        popExitTransition = {
+            if (reducedMotionEnabled) ExitTransition.None
+            else fadeOut() + slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.End
+            )
+        }
+    ) {
+        composable(ROUTE_LIBRARY) {
+            LibraryRoute(
+                onNavigateToBook = { bookId -> navController.navigate("book/$bookId") },
+                onContinueBook = { bookId -> navController.navigate("book/$bookId?autoPlay=true") },
+                onOpenSearch = { navController.navigate(ROUTE_SEARCH) }
+            )
+        }
+
+        composable(ROUTE_SEARCH) {
+            val application = LocalContext.current.applicationContext as AvdiBookApplication
+            SearchRoute(
+                application = application,
+                appContainer = appContainer,
+                onBack = { navController.popBackStack() },
+                onBookClick = { bookId -> navController.navigate("book/$bookId") }
+            )
+        }
+
+        composable(
+            route = ROUTE_BOOK,
+            arguments = listOf(
+                navArgument("bookId") { type = NavType.LongType },
+                navArgument("autoPlay") { type = NavType.BoolType; defaultValue = false }
+            )
+        ) { backStackEntry ->
+            val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
+            val autoPlay = backStackEntry.arguments?.getBoolean("autoPlay") ?: false
+            BookRoute(
+                bookId = bookId,
+                autoPlay = autoPlay,
+                onBack = { navController.popBackStack() },
+                onNavigateToNowPlaying = { nowPlayingBookId ->
+                    navController.navigate("now_playing/$nowPlayingBookId") {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(ROUTE_NOW_PLAYING_EMPTY) {
+            NowPlayingEmptyScreen(
+                onGoToLibrary = {
+                    navController.navigate(ROUTE_LIBRARY) { launchSingleTop = true }
+                }
+            )
+        }
+
+        composable(
+            route = ROUTE_NOW_PLAYING,
+            arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
+            NowPlayingRoute(
+                bookId = bookId,
+                onBack = {
+                    if (!navController.popBackStack()) {
                         navController.navigate(ROUTE_LIBRARY) { launchSingleTop = true }
                     }
-                )
-            }
+                }
+            )
+        }
 
-            composable(
-                route = ROUTE_NOW_PLAYING,
-                arguments = listOf(navArgument("bookId") { type = NavType.LongType })
-            ) { backStackEntry ->
-                val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
-                NowPlayingRoute(
-                    bookId = bookId,
-                    onBack = {
-                        if (!navController.popBackStack()) {
-                            navController.navigate(ROUTE_LIBRARY) { launchSingleTop = true }
-                        }
-                    }
-                )
-            }
+        composable(ROUTE_SETTINGS) {
+            SettingsRoute(
+                themeMode = chromeUiState.themeMode,
+                dynamicColorEnabled = chromeUiState.dynamicColorEnabled,
+                pureBlackDarkEnabled = chromeUiState.pureBlackDarkEnabled,
+                listeningDefaults = chromeUiState.listeningDefaults,
+                textScalePreset = chromeUiState.textScalePreset,
+                reducedMotionEnabled = chromeUiState.reducedMotionEnabled,
+                onThemeModeChanged = onThemeModeChanged,
+                onDynamicColorChanged = onDynamicColorChanged,
+                onPureBlackChanged = onPureBlackChanged,
+                onDefaultSpeedChanged = onDefaultSpeedChanged,
+                onDefaultSkipBackChanged = onDefaultSkipBackChanged,
+                onDefaultSkipForwardChanged = onDefaultSkipForwardChanged,
+                onDefaultAutoRewindChanged = onDefaultAutoRewindChanged,
+                onDefaultAutoRewindThresholdChanged = onDefaultAutoRewindThresholdChanged,
+                onDefaultUseLoudnessBoostChanged = onDefaultUseLoudnessBoostChanged,
+                onTextScalePresetChanged = onTextScalePresetChanged,
+                onReducedMotionChanged = onReducedMotionChanged,
+                onOpenImportManagement = { navController.navigate(ROUTE_IMPORT_MANAGEMENT) },
+                onOpenBackupRestore = { navController.navigate(ROUTE_BACKUP_RESTORE) },
+                onOpenAboutHelp = { navController.navigate(ROUTE_ABOUT) }
+            )
+        }
 
-            composable(ROUTE_SETTINGS) {
-                SettingsRoute(
-                    themeMode = chromeUiState.themeMode,
-                    dynamicColorEnabled = chromeUiState.dynamicColorEnabled,
-                    pureBlackDarkEnabled = chromeUiState.pureBlackDarkEnabled,
-                    onThemeModeChanged = onThemeModeChanged,
-                    onDynamicColorChanged = onDynamicColorChanged,
-                    onPureBlackChanged = onPureBlackChanged,
-                    onOpenImportManagement = { navController.navigate(ROUTE_IMPORT_MANAGEMENT) },
-                    onOpenBackupRestore = { navController.navigate(ROUTE_BACKUP_RESTORE) },
-                    onOpenAboutHelp = { navController.navigate(ROUTE_ABOUT) }
-                )
-            }
+        composable(ROUTE_IMPORT_MANAGEMENT) {
+            ImportManagementRoute(onBack = { navController.popBackStack() })
+        }
 
-            composable(ROUTE_IMPORT_MANAGEMENT) {
-                ImportManagementRoute(onBack = { navController.popBackStack() })
-            }
+        composable(ROUTE_BACKUP_RESTORE) {
+            BackupRestoreRoute(onBack = { navController.popBackStack() })
+        }
 
-            composable(ROUTE_BACKUP_RESTORE) {
-                BackupRestoreRoute(onBack = { navController.popBackStack() })
-            }
-
-            composable(ROUTE_ABOUT) {
-                AboutRoute(onBack = { navController.popBackStack() })
-            }
+        composable(ROUTE_ABOUT) {
+            AboutRoute(onBack = { navController.popBackStack() })
         }
     }
 }

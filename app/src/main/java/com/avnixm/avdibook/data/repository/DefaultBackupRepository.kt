@@ -11,6 +11,8 @@ import com.avnixm.avdibook.data.db.entity.ChapterEntity
 import com.avnixm.avdibook.data.db.entity.PlaybackStateEntity
 import com.avnixm.avdibook.data.db.entity.TrackEntity
 import com.avnixm.avdibook.data.model.BackupPayloadV1
+import com.avnixm.avdibook.data.model.ListeningSettings
+import com.avnixm.avdibook.data.prefs.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -19,7 +21,8 @@ import org.json.JSONObject
 class DefaultBackupRepository(
     private val appContext: Context,
     private val database: AvdiBookDatabase,
-    private val libraryRepository: LibraryRepository
+    private val libraryRepository: LibraryRepository,
+    private val appPreferences: AppPreferences
 ) : BackupRepository {
     private val bookDao = database.bookDao()
     private val trackDao = database.trackDao()
@@ -75,6 +78,7 @@ class DefaultBackupRepository(
         return BackupPayloadV1(
             schemaVersion = SCHEMA_VERSION,
             exportedAt = System.currentTimeMillis(),
+            appPreferences = buildAppPreferencesPayload(),
             books = books.map { book ->
                 BackupPayloadV1.BackupBook(
                     sourceUri = book.sourceUri,
@@ -147,7 +151,45 @@ class DefaultBackupRepository(
         )
     }
 
+    private suspend fun buildAppPreferencesPayload(): BackupPayloadV1.BackupAppPreferences {
+        val listeningDefaults = appPreferences.getListeningDefaults()
+        val accessibilitySettings = appPreferences.getAccessibilitySettings()
+        return BackupPayloadV1.BackupAppPreferences(
+            themeMode = appPreferences.getThemeMode().value,
+            dynamicColorEnabled = appPreferences.isDynamicColorEnabled(),
+            pureBlackDarkEnabled = appPreferences.isPureBlackDarkEnabled(),
+            playbackSpeed = listeningDefaults.playbackSpeed,
+            skipForwardSec = listeningDefaults.skipForwardSec,
+            skipBackSec = listeningDefaults.skipBackSec,
+            autoRewindSec = listeningDefaults.autoRewindSec,
+            autoRewindAfterPauseSec = listeningDefaults.autoRewindAfterPauseSec,
+            useLoudnessBoost = listeningDefaults.useLoudnessBoost,
+            textScalePreset = accessibilitySettings.textScalePreset.value,
+            reducedMotionEnabled = accessibilitySettings.reducedMotionEnabled
+        )
+    }
+
     private suspend fun mergePayload(payload: BackupPayloadV1) {
+        payload.appPreferences?.let { prefs ->
+            appPreferences.setThemeMode(AppPreferences.ThemeMode.fromValue(prefs.themeMode))
+            appPreferences.setDynamicColorEnabled(prefs.dynamicColorEnabled)
+            appPreferences.setPureBlackDarkEnabled(prefs.pureBlackDarkEnabled)
+            appPreferences.setListeningDefaults(
+                ListeningSettings(
+                    playbackSpeed = prefs.playbackSpeed,
+                    skipForwardSec = prefs.skipForwardSec,
+                    skipBackSec = prefs.skipBackSec,
+                    autoRewindSec = prefs.autoRewindSec,
+                    autoRewindAfterPauseSec = prefs.autoRewindAfterPauseSec,
+                    useLoudnessBoost = prefs.useLoudnessBoost
+                )
+            )
+            appPreferences.setTextScalePreset(
+                AppPreferences.TextScalePreset.fromValue(prefs.textScalePreset)
+            )
+            appPreferences.setReducedMotionEnabled(prefs.reducedMotionEnabled)
+        }
+
         val existingBooks = bookDao.getAllBooks().associateBy { it.sourceUri }.toMutableMap()
         val bookIdBySource = mutableMapOf<String, Long>()
 
@@ -304,6 +346,21 @@ class DefaultBackupRepository(
         return JSONObject().apply {
             put("schemaVersion", schemaVersion)
             put("exportedAt", exportedAt)
+            put("appPreferences", this@toJson.appPreferences?.let { prefs ->
+                JSONObject().apply {
+                    put("themeMode", prefs.themeMode)
+                    put("dynamicColorEnabled", prefs.dynamicColorEnabled)
+                    put("pureBlackDarkEnabled", prefs.pureBlackDarkEnabled)
+                    put("playbackSpeed", prefs.playbackSpeed)
+                    put("skipForwardSec", prefs.skipForwardSec)
+                    put("skipBackSec", prefs.skipBackSec)
+                    put("autoRewindSec", prefs.autoRewindSec)
+                    put("autoRewindAfterPauseSec", prefs.autoRewindAfterPauseSec)
+                    put("useLoudnessBoost", prefs.useLoudnessBoost)
+                    put("textScalePreset", prefs.textScalePreset)
+                    put("reducedMotionEnabled", prefs.reducedMotionEnabled)
+                }
+            })
             put("books", JSONArray().apply {
                 books.forEach { book ->
                     put(JSONObject().apply {
@@ -382,6 +439,24 @@ class DefaultBackupRepository(
         return BackupPayloadV1(
             schemaVersion = optInt("schemaVersion"),
             exportedAt = optLong("exportedAt"),
+            appPreferences = optJSONObject("appPreferences")?.let { value ->
+                BackupPayloadV1.BackupAppPreferences(
+                    themeMode = value.optInt("themeMode", AppPreferences.ThemeMode.SYSTEM.value),
+                    dynamicColorEnabled = value.optBoolean("dynamicColorEnabled", true),
+                    pureBlackDarkEnabled = value.optBoolean("pureBlackDarkEnabled", false),
+                    playbackSpeed = value.optDouble("playbackSpeed", 1.0).toFloat(),
+                    skipForwardSec = value.optInt("skipForwardSec", 30),
+                    skipBackSec = value.optInt("skipBackSec", 10),
+                    autoRewindSec = value.optInt("autoRewindSec", 10),
+                    autoRewindAfterPauseSec = value.optInt("autoRewindAfterPauseSec", 180),
+                    useLoudnessBoost = value.optBoolean("useLoudnessBoost", false),
+                    textScalePreset = value.optInt(
+                        "textScalePreset",
+                        AppPreferences.TextScalePreset.STANDARD.value
+                    ),
+                    reducedMotionEnabled = value.optBoolean("reducedMotionEnabled", false)
+                )
+            },
             books = optJSONArray("books").toList().map { value ->
                 value as JSONObject
                 BackupPayloadV1.BackupBook(

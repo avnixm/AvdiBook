@@ -28,7 +28,7 @@ import com.avnixm.avdibook.data.db.entity.TrackEntity
         BookmarkEntity::class,
         ChapterEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AvdiBookDatabase : RoomDatabase() {
@@ -116,6 +116,22 @@ abstract class AvdiBookDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    DELETE FROM book_settings
+                    WHERE playbackSpeed = 1.0
+                      AND skipForwardSec = 30
+                      AND skipBackSec = 10
+                      AND autoRewindSec = 10
+                      AND autoRewindAfterPauseSec = 180
+                      AND useLoudnessBoost = 0
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun create(context: Context): AvdiBookDatabase {
             return Room.databaseBuilder(
                 context,
@@ -125,6 +141,7 @@ abstract class AvdiBookDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_1_2)
                 .addMigrations(MIGRATION_2_3)
                 .addMigrations(MIGRATION_3_4)
+                .addMigrations(MIGRATION_4_5)
                 .build()
         }
     }

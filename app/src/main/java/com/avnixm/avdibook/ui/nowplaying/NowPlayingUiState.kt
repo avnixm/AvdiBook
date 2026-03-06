@@ -15,6 +15,7 @@ data class NowPlayingUiState(
     val sleepLabel: String = "Off",
     val skipBackSec: Int = 10,
     val skipForwardSec: Int = 30,
+    val isUsingGlobalDefaults: Boolean = true,
     val tracks: List<BookTrackUi> = emptyList(),
     val chapters: List<ChapterUi> = emptyList(),
     val bookmarks: List<BookmarkUi> = emptyList(),

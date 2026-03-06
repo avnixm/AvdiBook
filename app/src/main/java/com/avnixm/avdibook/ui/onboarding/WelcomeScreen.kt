@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.avnixm.avdibook.ui.design.AppWindowSize
+import com.avnixm.avdibook.ui.design.rememberAppWindowSize
 
 @Composable
 fun WelcomeRoute(
@@ -32,6 +34,13 @@ fun WelcomeRoute(
     onRestoreBackup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val windowSize = rememberAppWindowSize()
+    val horizontalPadding = when (windowSize) {
+        AppWindowSize.COMPACT -> 24.dp
+        AppWindowSize.MEDIUM -> 40.dp
+        AppWindowSize.EXPANDED -> 72.dp
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -40,7 +49,7 @@ fun WelcomeRoute(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(horizontal = horizontalPadding, vertical = 24.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -73,7 +82,7 @@ fun WelcomeRoute(
                 )
 
                 Text(
-                    text = "Your audiobooks, beautifully organized.",
+                    text = "Your audiobooks, beautifully organized with global controls and smooth playback.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
