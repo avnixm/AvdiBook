@@ -104,6 +104,7 @@ private enum class LibraryFilter(val label: String) {
 @Composable
 fun LibraryRoute(
     onNavigateToBook: (Long) -> Unit,
+    onContinueBook: (Long) -> Unit,
     onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -172,7 +173,8 @@ fun LibraryRoute(
             )
         },
         onSkipImport = viewModel::onSkipImportForNow,
-        onBookClick = viewModel::onBookSelected
+        onBookClick = viewModel::onBookSelected,
+        onContinueClick = onContinueBook
     )
 }
 
@@ -186,6 +188,7 @@ fun LibraryScreen(
     onImportFiles: () -> Unit,
     onSkipImport: () -> Unit,
     onBookClick: (Long) -> Unit,
+    onContinueClick: (Long) -> Unit = onBookClick,
     modifier: Modifier = Modifier
 ) {
     var isGridMode by rememberSaveable { mutableStateOf(true) }
@@ -267,6 +270,7 @@ fun LibraryScreen(
                 activeFilter = activeFilter,
                 onFilterSelected = { activeFilter = it },
                 onBookClick = onBookClick,
+                onContinueClick = onContinueClick,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
@@ -316,6 +320,7 @@ private fun LibraryContent(
     activeFilter: LibraryFilter,
     onFilterSelected: (LibraryFilter) -> Unit,
     onBookClick: (Long) -> Unit,
+    onContinueClick: (Long) -> Unit = onBookClick,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -375,7 +380,7 @@ private fun LibraryContent(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(books, key = { it.bookId }) { book ->
-                    BookCard(book = book, onBookClick = onBookClick)
+                    BookCard(book = book, onBookClick = onBookClick, onContinueClick = onContinueClick)
                 }
             }
         } else {
@@ -387,7 +392,7 @@ private fun LibraryContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(books, key = { it.bookId }) { book ->
-                    BookRow(book = book, onBookClick = onBookClick)
+                    BookRow(book = book, onBookClick = onBookClick, onContinueClick = onContinueClick)
                 }
             }
         }
@@ -399,6 +404,7 @@ private fun LibraryContent(
 private fun BookCard(
     book: BookWithProgressUi,
     onBookClick: (Long) -> Unit,
+    onContinueClick: (Long) -> Unit = onBookClick,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -486,7 +492,7 @@ private fun BookCard(
                 }
                 if (book.hasResume) {
                     AssistChip(
-                        onClick = { onBookClick(book.bookId) },
+                        onClick = { onContinueClick(book.bookId) },
                         label = { Text("Continue", style = MaterialTheme.typography.labelSmall) },
                         leadingIcon = {
                             Icon(
@@ -527,6 +533,7 @@ private fun BookCard(
 private fun BookRow(
     book: BookWithProgressUi,
     onBookClick: (Long) -> Unit,
+    onContinueClick: (Long) -> Unit = onBookClick,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -606,7 +613,7 @@ private fun BookRow(
 
                 if (book.hasResume) {
                     AssistChip(
-                        onClick = { onBookClick(book.bookId) },
+                        onClick = { onContinueClick(book.bookId) },
                         label = { Text("Continue", style = MaterialTheme.typography.labelSmall) },
                         leadingIcon = {
                             Icon(

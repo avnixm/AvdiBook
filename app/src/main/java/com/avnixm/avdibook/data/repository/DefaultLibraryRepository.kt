@@ -154,6 +154,14 @@ class DefaultLibraryRepository(
         }
     }
 
+    override suspend fun backfillMissingCoverArt() {
+        withContext(Dispatchers.IO) {
+            bookDao.getAllBooks()
+                .filter { it.coverArtPath == null }
+                .forEach { book -> extractionScheduler.schedule(book.id) }
+        }
+    }
+
     private fun collectAudioFiles(root: DocumentFile): List<DocumentFile> {
         val result = mutableListOf<DocumentFile>()
 

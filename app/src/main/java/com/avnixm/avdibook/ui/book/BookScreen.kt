@@ -89,17 +89,19 @@ private val BOOK_TABS = listOf("Tracks", "Bookmarks", "Settings")
 @Composable
 fun BookRoute(
     bookId: Long,
+    autoPlay: Boolean = false,
     onBack: () -> Unit,
     onNavigateToNowPlaying: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val application = LocalContext.current.applicationContext as AvdiBookApplication
     val viewModel: BookViewModel = viewModel(
-        key = "book_$bookId",
+        key = "book_${bookId}_${autoPlay}",
         factory = BookViewModel.factory(
             application = application,
             appContainer = application.appContainer,
-            bookId = bookId
+            bookId = bookId,
+            autoPlay = autoPlay
         )
     )
 

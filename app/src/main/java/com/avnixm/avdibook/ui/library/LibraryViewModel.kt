@@ -65,6 +65,7 @@ class LibraryViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 libraryRepository.refreshMissingSourceFlags()
+                libraryRepository.backfillMissingCoverArt()
             }
         }
     }

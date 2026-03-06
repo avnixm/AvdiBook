@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -34,6 +35,7 @@ import kotlinx.coroutines.launch
 class BookViewModel(
     application: Application,
     private val bookId: Long,
+    private val autoPlay: Boolean = false,
     private val bookDetailsRepository: BookDetailsRepository,
     private val playbackControllerFacade: PlaybackControllerFacade,
     private val appPreferences: AppPreferences
@@ -130,6 +132,13 @@ class BookViewModel(
     init {
         viewModelScope.launch {
             bookDetailsRepository.getOrCreateBookSettings(bookId)
+        }
+
+        if (autoPlay) {
+            viewModelScope.launch {
+                uiState.first { !it.isLoading }
+                requestPlayback(PendingPlaybackRequest(trackId = null, positionMs = 0L))
+            }
         }
 
         currentTrackPollingJob = viewModelScope.launch {
@@ -305,12 +314,14 @@ class BookViewModel(
         fun factory(
             application: Application,
             appContainer: AppContainer,
-            bookId: Long
+            bookId: Long,
+            autoPlay: Boolean = false
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 BookViewModel(
                     application = application,
                     bookId = bookId,
+                    autoPlay = autoPlay,
                     bookDetailsRepository = appContainer.bookDetailsRepository,
                     playbackControllerFacade = appContainer.playbackControllerFacade,
                     appPreferences = appContainer.appPreferences

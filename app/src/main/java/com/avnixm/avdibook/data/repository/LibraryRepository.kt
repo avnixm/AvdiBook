@@ -18,4 +18,6 @@ interface LibraryRepository {
     suspend fun getTracks(bookId: Long): List<TrackEntity>
 
     suspend fun refreshMissingSourceFlags()
+
+    suspend fun backfillMissingCoverArt()
 }

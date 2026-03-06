@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,7 +52,7 @@ private const val ROUTE_WELCOME = "welcome"
 private const val ROUTE_IMPORT_METHOD = "import_method"
 private const val ROUTE_LIBRARY = "library"
 private const val ROUTE_SEARCH = "search"
-private const val ROUTE_BOOK = "book/{bookId}"
+private const val ROUTE_BOOK = "book/{bookId}?autoPlay={autoPlay}"
 private const val ROUTE_NOW_PLAYING_EMPTY = "now_playing"
 private const val ROUTE_NOW_PLAYING = "now_playing/{bookId}"
 private const val ROUTE_SETTINGS = "settings"
@@ -82,6 +83,10 @@ fun AvdiBookApp(
     onMiniPlayerSkipForward: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (chromeUiState.isInitializing) {
+        Box(modifier = modifier.fillMaxSize())
+        return
+    }
     if (!chromeUiState.onboardingCompleted) {
         OnboardingGraph(
             onOnboardingCompleted = onOnboardingCompleted,
@@ -231,6 +236,7 @@ private fun MainAppGraph(
             composable(ROUTE_LIBRARY) {
                 LibraryRoute(
                     onNavigateToBook = { bookId -> navController.navigate("book/$bookId") },
+                    onContinueBook = { bookId -> navController.navigate("book/$bookId?autoPlay=true") },
                     onOpenSearch = { navController.navigate(ROUTE_SEARCH) }
                 )
             }
@@ -247,11 +253,16 @@ private fun MainAppGraph(
 
             composable(
                 route = ROUTE_BOOK,
-                arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                arguments = listOf(
+                    navArgument("bookId") { type = NavType.LongType },
+                    navArgument("autoPlay") { type = NavType.BoolType; defaultValue = false }
+                )
             ) { backStackEntry ->
                 val bookId = backStackEntry.arguments?.getLong("bookId") ?: return@composable
+                val autoPlay = backStackEntry.arguments?.getBoolean("autoPlay") ?: false
                 BookRoute(
                     bookId = bookId,
+                    autoPlay = autoPlay,
                     onBack = { navController.popBackStack() },
                     onNavigateToNowPlaying = { nowPlayingBookId ->
                         navController.navigate("now_playing/$nowPlayingBookId") {

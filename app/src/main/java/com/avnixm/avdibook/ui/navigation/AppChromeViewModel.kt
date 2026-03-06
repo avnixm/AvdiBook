@@ -31,6 +31,7 @@ data class MiniPlayerUiState(
 )
 
 data class AppChromeUiState(
+    val isInitializing: Boolean = true,
     val onboardingCompleted: Boolean = false,
     val themeMode: AppPreferences.ThemeMode = AppPreferences.ThemeMode.SYSTEM,
     val dynamicColorEnabled: Boolean = true,
@@ -53,6 +54,7 @@ class AppChromeViewModel(
         miniPlayerState
     ) { onboardingCompleted, themeMode, dynamicColorEnabled, pureBlackDarkEnabled, miniPlayer ->
         AppChromeUiState(
+            isInitializing = false,
             onboardingCompleted = onboardingCompleted,
             themeMode = themeMode,
             dynamicColorEnabled = dynamicColorEnabled,
