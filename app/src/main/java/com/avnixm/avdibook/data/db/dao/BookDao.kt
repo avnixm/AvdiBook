@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.avnixm.avdibook.data.db.entity.BookEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.Flow
 interface BookDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertBook(book: BookEntity): Long
+
+    @Upsert
+    suspend fun upsertBook(book: BookEntity)
 
     @Query("SELECT * FROM books ORDER BY createdAt DESC")
     fun observeBooks(): Flow<List<BookEntity>>
@@ -32,4 +36,7 @@ interface BookDao {
 
     @Query("UPDATE books SET isMissingSource = :isMissingSource WHERE id = :bookId")
     suspend fun updateMissingSource(bookId: Long, isMissingSource: Boolean)
+
+    @Query("UPDATE books SET coverArtPath = :path WHERE id = :bookId")
+    suspend fun updateCoverArtPath(bookId: Long, path: String?)
 }

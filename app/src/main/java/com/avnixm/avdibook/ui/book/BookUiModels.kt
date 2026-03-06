@@ -8,6 +8,15 @@ data class BookTrackUi(
     val isPlaying: Boolean
 )
 
+data class ChapterUi(
+    val id: Long,
+    val title: String,
+    val startMs: Long,
+    val endMs: Long?,
+    val trackId: Long?,
+    val isCurrent: Boolean
+)
+
 data class BookmarkUi(
     val id: Long,
     val trackId: Long,
@@ -31,7 +40,13 @@ data class BookUiState(
     val bookId: Long,
     val title: String = "",
     val tracks: List<BookTrackUi> = emptyList(),
+    val chapters: List<ChapterUi> = emptyList(),
     val bookmarks: List<BookmarkUi> = emptyList(),
     val settings: BookSettingsUi? = null,
-    val hasPlaybackState: Boolean = false
+    val hasPlaybackState: Boolean = false,
+    val bookProgressPercent: Float = 0f,
+    val timeLeftMs: Long = 0L,
+    val isProgressEstimated: Boolean = true,
+    val isMissingSource: Boolean = false,
+    val coverArtPath: String? = null
 )

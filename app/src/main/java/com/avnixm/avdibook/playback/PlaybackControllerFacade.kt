@@ -1,6 +1,7 @@
 package com.avnixm.avdibook.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -28,9 +29,11 @@ class PlaybackControllerFacade(
         trackId: Long?,
         positionMs: Long = 0L
     ): Result<Unit> = runCatching {
+        Log.d("PlaybackFacade", "playBookFromTrack: bookId=$bookId trackId=$trackId positionMs=$positionMs")
         val controller = connectController()
         val book = libraryRepository.getBook(bookId) ?: error("Book not found.")
         val tracks = libraryRepository.getTracks(bookId)
+        Log.d("PlaybackFacade", "book=${book.title}, tracks=${tracks.size}, uris=${tracks.map { it.uri }}")
         require(tracks.isNotEmpty()) { "This book has no playable audio tracks." }
 
         val mediaItems = tracks.map { track -> track.toMediaItem(bookId = book.id, bookTitle = book.title) }

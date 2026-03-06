@@ -1,6 +1,7 @@
 package com.avnixm.avdibook.ui.nowplaying
 
 import com.avnixm.avdibook.ui.book.BookmarkUi
+import com.avnixm.avdibook.ui.book.ChapterUi
 import com.avnixm.avdibook.ui.book.BookTrackUi
 
 data class NowPlayingUiState(
@@ -15,5 +16,13 @@ data class NowPlayingUiState(
     val skipBackSec: Int = 10,
     val skipForwardSec: Int = 30,
     val tracks: List<BookTrackUi> = emptyList(),
-    val bookmarks: List<BookmarkUi> = emptyList()
+    val chapters: List<ChapterUi> = emptyList(),
+    val bookmarks: List<BookmarkUi> = emptyList(),
+    val bookProgressMs: Long = 0L,
+    val bookTotalMs: Long = 0L,
+    val timeLeftMs: Long = 0L,
+    val bookProgressPercent: Float = 0f,
+    val isBookProgressEstimated: Boolean = true,
+    val currentChapterId: Long? = null,
+    val coverArtPath: String? = null
 )

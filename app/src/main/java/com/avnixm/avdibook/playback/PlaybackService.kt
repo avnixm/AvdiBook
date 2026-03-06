@@ -2,6 +2,7 @@ package com.avnixm.avdibook.playback
 
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -22,9 +23,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PlaybackService : MediaSessionService() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // All coroutines run on Main so ExoPlayer can be accessed safely.
+    // Database calls switch to IO via withContext inside each function.
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaSession? = null
@@ -93,6 +97,8 @@ class PlaybackService : MediaSessionService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
+                Player.STATE_READY -> persistCurrentTrackDuration()
+
                 Player.STATE_ENDED -> {
                     persistCurrentProgress(resetToStart = true)
                     if (sleepTimerMode == SleepTimerMode.END_OF_TRACK) {
@@ -216,9 +222,12 @@ class PlaybackService : MediaSessionService() {
         lastPausedAtMs = null
 
         val pausedForMs = SystemClock.elapsedRealtime() - pausedAt
-        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        val settings = withContext(Dispatchers.IO) {
+            bookDetailsRepository.getOrCreateBookSettings(bookId)
+        }
         if (!AutoRewindPolicy.shouldApply(pausedForMs, settings.autoRewindAfterPauseSec)) return
 
+        // player.currentPosition is on Main thread (serviceScope dispatcher).
         val targetPosition = AutoRewindPolicy.rewoundPosition(
             currentPositionMs = player.currentPosition,
             rewindSec = settings.autoRewindSec
@@ -227,34 +236,52 @@ class PlaybackService : MediaSessionService() {
     }
 
     private suspend fun applyBookSettings(bookId: Long) {
-        val settings = bookDetailsRepository.getOrCreateBookSettings(bookId)
+        val settings = withContext(Dispatchers.IO) {
+            bookDetailsRepository.getOrCreateBookSettings(bookId)
+        }
         player.setPlaybackParameters(PlaybackParameters(settings.playbackSpeed))
     }
 
     private fun persistCurrentProgress(resetToStart: Boolean) {
+        // Snapshot player state on Main thread first, then write to DB on IO.
+        val targetItem = when {
+            player.mediaItemCount <= 0 -> null
+            resetToStart -> player.getMediaItemAt(0)
+            else -> player.currentMediaItem
+        } ?: return
+
+        val payload = targetItem.toPlaybackPayload(
+            resetToStart = resetToStart,
+            currentPosition = player.currentPosition,
+            currentSpeed = player.playbackParameters.speed
+        ) ?: return
+
         serviceScope.launch {
-            val targetItem = when {
-                player.mediaItemCount <= 0 -> null
-                resetToStart -> player.getMediaItemAt(0)
-                else -> player.currentMediaItem
-            } ?: return@launch
-
-            val payload = targetItem.toPlaybackPayload(
-                resetToStart = resetToStart,
-                currentPosition = player.currentPosition,
-                currentSpeed = player.playbackParameters.speed
-            ) ?: return@launch
-
-            playbackRepository.upsertPlaybackState(
-                PlaybackStateEntity(
-                    bookId = payload.bookId,
-                    trackId = payload.trackId,
-                    positionMs = payload.positionMs,
-                    speed = payload.speed,
-                    updatedAt = System.currentTimeMillis()
+            withContext(Dispatchers.IO) {
+                playbackRepository.upsertPlaybackState(
+                    PlaybackStateEntity(
+                        bookId = payload.bookId,
+                        trackId = payload.trackId,
+                        positionMs = payload.positionMs,
+                        speed = payload.speed,
+                        updatedAt = System.currentTimeMillis()
+                    )
                 )
-            )
-            playbackRepository.updateLastPlayed(payload.bookId, System.currentTimeMillis())
+                playbackRepository.updateLastPlayed(payload.bookId, System.currentTimeMillis())
+            }
+        }
+    }
+
+    private fun persistCurrentTrackDuration() {
+        // Snapshot on Main thread, then write to DB on IO.
+        val duration = player.duration
+        if (duration == C.TIME_UNSET || duration <= 0L) return
+        val trackId = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+
+        serviceScope.launch {
+            withContext(Dispatchers.IO) {
+                bookDetailsRepository.updateTrackDuration(trackId, duration)
+            }
         }
     }
 

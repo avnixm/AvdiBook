@@ -16,4 +16,15 @@ object TimeFormatters {
             "%d:%02d".format(minutes, seconds)
         }
     }
+
+    fun formatHoursMinutes(milliseconds: Long): String {
+        val safeMillis = milliseconds.coerceAtLeast(0L)
+        val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(safeMillis)
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m left"
+            else -> "${minutes}m left"
+        }
+    }
 }

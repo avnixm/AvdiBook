@@ -6,5 +6,10 @@ data class BookWithProgressUi(
     val trackCount: Int,
     val hasResume: Boolean,
     val resumePositionMs: Long,
-    val lastPlayedAt: Long?
+    val lastPlayedAt: Long?,
+    val progressPercent: Float,
+    val timeLeftMs: Long,
+    val isProgressEstimated: Boolean,
+    val isMissingSource: Boolean,
+    val coverArtPath: String? = null
 )

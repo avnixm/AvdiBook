@@ -14,6 +14,9 @@ interface TrackDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertTracks(tracks: List<TrackEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTrack(track: TrackEntity): Long
+
     @Upsert
     suspend fun upsertTracks(tracks: List<TrackEntity>)
 

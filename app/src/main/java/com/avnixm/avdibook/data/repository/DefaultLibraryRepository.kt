@@ -7,6 +7,8 @@ import androidx.room.withTransaction
 import com.avnixm.avdibook.data.db.AvdiBookDatabase
 import com.avnixm.avdibook.data.db.entity.BookEntity
 import com.avnixm.avdibook.data.db.entity.TrackEntity
+import com.avnixm.avdibook.data.metadata.ChapterExtractionScheduler
+import com.avnixm.avdibook.data.model.BookProgressCalculator
 import com.avnixm.avdibook.data.model.BookWithPlayback
 import com.avnixm.avdibook.data.model.SourceType
 import java.text.SimpleDateFormat
@@ -20,7 +22,8 @@ import kotlinx.coroutines.withContext
 
 class DefaultLibraryRepository(
     private val context: Context,
-    private val database: AvdiBookDatabase
+    private val database: AvdiBookDatabase,
+    private val extractionScheduler: ChapterExtractionScheduler
 ) : LibraryRepository {
     private val bookDao = database.bookDao()
     private val trackDao = database.trackDao()
@@ -30,15 +33,21 @@ class DefaultLibraryRepository(
         return combine(
             bookDao.observeBooks(),
             playbackDao.observeAllPlaybackStates(),
-            trackDao.observeTrackCounts()
-        ) { books, playbackStates, trackCounts ->
+            trackDao.observeAllTracks()
+        ) { books, playbackStates, allTracks ->
             val playbackByBook = playbackStates.associateBy { it.bookId }
-            val trackCountByBook = trackCounts.associate { it.bookId to it.trackCount }
+            val tracksByBook = allTracks.groupBy { it.bookId }
             books.map { book ->
+                val bookTracks = tracksByBook[book.id].orEmpty().sortedBy { it.trackIndex }
+                val playbackState = playbackByBook[book.id]
                 BookWithPlayback(
                     book = book,
-                    playbackState = playbackByBook[book.id],
-                    trackCount = trackCountByBook[book.id] ?: 0
+                    playbackState = playbackState,
+                    trackCount = bookTracks.size,
+                    progress = BookProgressCalculator.calculate(
+                        tracks = bookTracks,
+                        playbackState = playbackState
+                    )
                 )
             }
         }
@@ -54,14 +63,15 @@ class DefaultLibraryRepository(
             val now = System.currentTimeMillis()
             val bookTitle = root.name?.takeIf { it.isNotBlank() } ?: "Imported Folder"
 
-            database.withTransaction {
+            val insertedBookId = database.withTransaction {
                 val bookId = bookDao.insertBook(
                     BookEntity(
                         title = bookTitle,
                         sourceType = SourceType.FOLDER.value,
                         sourceUri = treeUri.toString(),
                         createdAt = now,
-                        lastPlayedAt = null
+                        lastPlayedAt = null,
+                        isMissingSource = false
                     )
                 )
 
@@ -79,6 +89,8 @@ class DefaultLibraryRepository(
 
                 bookId
             }
+            extractionScheduler.schedule(insertedBookId)
+            insertedBookId
         }
     }
 
@@ -90,14 +102,15 @@ class DefaultLibraryRepository(
             val bookTitle = "Imported (${timestamp(now)})"
             val sourceUri = "files:$now:${UUID.randomUUID()}"
 
-            database.withTransaction {
+            val insertedBookId = database.withTransaction {
                 val bookId = bookDao.insertBook(
                     BookEntity(
                         title = bookTitle,
                         sourceType = SourceType.FILES.value,
                         sourceUri = sourceUri,
                         createdAt = now,
-                        lastPlayedAt = null
+                        lastPlayedAt = null,
+                        isMissingSource = false
                     )
                 )
 
@@ -116,6 +129,8 @@ class DefaultLibraryRepository(
 
                 bookId
             }
+            extractionScheduler.schedule(insertedBookId)
+            insertedBookId
         }
     }
 
@@ -125,6 +140,18 @@ class DefaultLibraryRepository(
 
     override suspend fun getTracks(bookId: Long): List<TrackEntity> = withContext(Dispatchers.IO) {
         trackDao.getTracksByBook(bookId)
+    }
+
+    override suspend fun refreshMissingSourceFlags() {
+        withContext(Dispatchers.IO) {
+            val books = bookDao.getAllBooks()
+            books.forEach { book ->
+                val missing = isSourceMissing(book.sourceType, book.sourceUri, book.id)
+                if (missing != book.isMissingSource) {
+                    bookDao.updateMissingSource(book.id, missing)
+                }
+            }
+        }
     }
 
     private fun collectAudioFiles(root: DocumentFile): List<DocumentFile> {
@@ -150,6 +177,7 @@ class DefaultLibraryRepository(
     private fun isAudioDocument(file: DocumentFile): Boolean {
         val mimeType = file.type?.lowercase(Locale.ROOT)
         if (mimeType?.startsWith("audio/") == true) return true
+        if (mimeType == "video/mp4") return true  // M4b files are often misreported as video/mp4
 
         val extension = file.name
             ?.substringAfterLast('.', missingDelimiterValue = "")
@@ -170,6 +198,43 @@ class DefaultLibraryRepository(
     }
 
     companion object {
-        private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "aac", "ogg", "wav", "flac", "opus")
+        private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "aac", "ogg", "wav", "flac", "opus")
+    }
+
+    private suspend fun isSourceMissing(sourceType: Int, sourceUri: String, bookId: Long): Boolean {
+        return when (sourceType) {
+            SourceType.FOLDER.value -> {
+                val uri = Uri.parse(sourceUri)
+                !hasPersistedReadPermission(uri)
+            }
+
+            SourceType.FILES.value -> {
+                val tracks = trackDao.getTracksByBook(bookId)
+                if (tracks.isEmpty()) {
+                    true
+                } else {
+                    tracks.none { track ->
+                        val uri = Uri.parse(track.uri)
+                        canOpenUri(uri)
+                    }
+                }
+            }
+
+            else -> false
+        }
+    }
+
+    private fun hasPersistedReadPermission(uri: Uri): Boolean {
+        return context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == uri && permission.isReadPermission
+        }
+    }
+
+    private fun canOpenUri(uri: Uri): Boolean {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.read()
+            }
+        }.isSuccess
     }
 }

@@ -2,6 +2,7 @@ package com.avnixm.avdibook.ui.book
 
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -52,6 +53,32 @@ class BookViewModel(
         latestDetails = details
 
         val settings = details.settings
+        val chapters = details.chapters.map { chapter ->
+            ChapterUi(
+                id = chapter.id,
+                title = chapter.title,
+                startMs = chapter.startMs,
+                endMs = chapter.endMs,
+                trackId = chapter.trackId,
+                isCurrent = chapter.startMs <= details.progress.progressMs &&
+                    (chapter.endMs == null || details.progress.progressMs < chapter.endMs)
+            )
+        }.ifEmpty {
+            var cursor = 0L
+            details.tracks.mapIndexed { index, track ->
+                val start = cursor
+                val end = track.durationMs?.let { start + it }
+                cursor = end ?: cursor
+                ChapterUi(
+                    id = -track.id,
+                    title = track.title.ifBlank { "Track ${index + 1}" },
+                    startMs = start,
+                    endMs = end,
+                    trackId = track.id,
+                    isCurrent = details.playbackState?.trackId == track.id
+                )
+            }
+        }
         BookUiState(
             isLoading = false,
             bookId = bookId,
@@ -65,6 +92,7 @@ class BookViewModel(
                     isPlaying = track.id == activeTrackId
                 )
             },
+            chapters = chapters,
             bookmarks = details.bookmarks.map { bookmark ->
                 val trackTitle = details.tracks.firstOrNull { it.id == bookmark.trackId }?.title ?: "Track"
                 BookmarkUi(
@@ -86,7 +114,12 @@ class BookViewModel(
                     useLoudnessBoost = it.useLoudnessBoost
                 )
             },
-            hasPlaybackState = details.playbackState != null
+            hasPlaybackState = details.playbackState != null,
+            bookProgressPercent = details.progress.percent,
+            timeLeftMs = details.progress.remainingMs,
+            isProgressEstimated = details.progress.isEstimated,
+            isMissingSource = details.book?.isMissingSource == true,
+            coverArtPath = details.book?.coverArtPath
         )
     }.stateIn(
         scope = viewModelScope,
@@ -209,6 +242,12 @@ class BookViewModel(
 
     private fun requestPlayback(request: PendingPlaybackRequest) {
         viewModelScope.launch {
+            if (latestDetails?.book?.isMissingSource == true) {
+                eventsFlow.emit(
+                    BookEvent.ShowMessage("Source access missing. Re-import/relink required.")
+                )
+                return@launch
+            }
             val shouldRequestPermission = shouldRequestNotificationPermission()
             if (shouldRequestPermission) {
                 pendingPlaybackRequest = request
@@ -231,11 +270,15 @@ class BookViewModel(
         if (result.isSuccess) {
             eventsFlow.emit(BookEvent.NavigateToNowPlaying(bookId))
         } else {
-            eventsFlow.emit(
-                BookEvent.ShowMessage(
-                    result.exceptionOrNull()?.message ?: "Unable to start playback."
-                )
-            )
+            val e = result.exceptionOrNull()
+            Log.e("BookViewModel", "executePlayback failed for bookId=$bookId", e)
+            val debugMsg = buildString {
+                append("[DEBUG] Playback failed\n")
+                append("${e?.javaClass?.simpleName}: ${e?.message}")
+                val cause = e?.cause
+                if (cause != null) append("\nCaused by: ${cause.javaClass.simpleName}: ${cause.message}")
+            }
+            eventsFlow.emit(BookEvent.ShowMessage(debugMsg))
         }
     }
 

@@ -1,6 +1,7 @@
 package com.avnixm.avdibook.ui.nowplaying
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -11,12 +12,16 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.avnixm.avdibook.AppContainer
 import com.avnixm.avdibook.data.db.entity.BookSettingsEntity
+import com.avnixm.avdibook.data.db.entity.PlaybackStateEntity
 import com.avnixm.avdibook.data.model.BookDetailsData
+import com.avnixm.avdibook.data.model.BookProgressCalculator
 import com.avnixm.avdibook.data.repository.BookDetailsRepository
+import com.avnixm.avdibook.playback.ChapterResolver
 import com.avnixm.avdibook.playback.PlaybackContract
 import com.avnixm.avdibook.playback.PlaybackControllerFacade
 import com.avnixm.avdibook.playback.SleepTimerMode
 import com.avnixm.avdibook.ui.book.BookmarkUi
+import com.avnixm.avdibook.ui.book.ChapterUi
 import com.avnixm.avdibook.ui.book.BookTrackUi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -56,11 +61,16 @@ class NowPlayingViewModel(
 
     init {
         viewModelScope.launch {
-            controller = playbackControllerFacade.connectController().also {
-                it.addListener(playerListener)
+            runCatching {
+                controller = playbackControllerFacade.connectController().also {
+                    it.addListener(playerListener)
+                }
+                bookDetailsRepository.getOrCreateBookSettings(bookId)
+                refreshPlayerState()
+            }.onFailure { e ->
+                Log.e("NowPlayingVM", "init connectController failed", e)
+                eventsFlow.emit(NowPlayingEvent.ShowMessage("[DEBUG] Controller init failed: ${e::class.simpleName}: ${e.message}"))
             }
-            bookDetailsRepository.getOrCreateBookSettings(bookId)
-            refreshPlayerState()
             startPositionTicker()
         }
 
@@ -144,17 +154,28 @@ class NowPlayingViewModel(
         }
     }
 
-    fun onTrackSelected(trackId: Long) {
+    fun onChapterSelected(chapterId: Long) {
         viewModelScope.launch {
+            val details = latestDetails ?: return@launch
+            val chapter = uiState.value.chapters.firstOrNull { it.id == chapterId } ?: return@launch
+            val target = ChapterResolver.resolveSeekTarget(details.tracks, chapter.startMs)
+            if (target == null) {
+                eventsFlow.emit(
+                    NowPlayingEvent.ShowMessage(
+                        "Unable to resolve chapter position"
+                    )
+                )
+                return@launch
+            }
             val result = playbackControllerFacade.playBookFromTrack(
                 bookId = bookId,
-                trackId = trackId,
-                positionMs = 0L
+                trackId = target.trackId,
+                positionMs = target.positionMs
             )
             if (result.isFailure) {
                 eventsFlow.emit(
                     NowPlayingEvent.ShowMessage(
-                        result.exceptionOrNull()?.message ?: "Unable to play selected track"
+                        result.exceptionOrNull()?.message ?: "Unable to play selected chapter"
                     )
                 )
             }
@@ -190,33 +211,38 @@ class NowPlayingViewModel(
 
     private fun refreshPlayerState() {
         viewModelScope.launch {
-            val mediaController = controller ?: playbackControllerFacade.connectController().also {
-                controller = it
-            }
-            val durationMs = mediaController.duration.takeIf { it != C.TIME_UNSET } ?: 0L
-            val metadata = mediaController.currentMediaItem?.mediaMetadata
-            val sleepState = playbackControllerFacade.getSleepTimerState()
+            runCatching {
+                val mediaController = controller ?: playbackControllerFacade.connectController().also {
+                    controller = it
+                    it.addListener(playerListener)
+                }
+                val durationMs = mediaController.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+                val metadata = mediaController.currentMediaItem?.mediaMetadata
+                val sleepState = playbackControllerFacade.getSleepTimerState()
 
-            mutableUiState.update { current ->
-                current.copy(
-                    bookTitle = metadata?.albumTitle?.toString().takeUnless { it.isNullOrBlank() }
-                        ?: current.bookTitle,
-                    trackTitle = metadata?.title?.toString().orEmpty(),
-                    isPlaying = mediaController.isPlaying,
-                    positionMs = mediaController.currentPosition.coerceAtLeast(0L),
-                    durationMs = durationMs.coerceAtLeast(0L),
-                    speed = mediaController.playbackParameters.speed,
-                    sleepLabel = sleepState.toLabel()
-                )
-            }
+                mutableUiState.update { current ->
+                    current.copy(
+                        bookTitle = metadata?.albumTitle?.toString().takeUnless { it.isNullOrBlank() }
+                            ?: current.bookTitle,
+                        trackTitle = metadata?.title?.toString().orEmpty(),
+                        isPlaying = mediaController.isPlaying,
+                        positionMs = mediaController.currentPosition.coerceAtLeast(0L),
+                        durationMs = durationMs.coerceAtLeast(0L),
+                        speed = mediaController.playbackParameters.speed,
+                        sleepLabel = sleepState.toLabel()
+                    )
+                }
 
-            latestDetails?.let { details ->
-                updateUiFromDetails(details)
+                latestDetails?.let { details ->
+                    updateUiFromDetails(details, mediaController.currentPosition.coerceAtLeast(0L))
+                }
+            }.onFailure { e ->
+                Log.e("NowPlayingVM", "refreshPlayerState failed", e)
             }
         }
     }
 
-    private fun updateUiFromDetails(details: BookDetailsData) {
+    private fun updateUiFromDetails(details: BookDetailsData, currentTrackPositionMs: Long = 0L) {
         val mediaItem = controller?.currentMediaItem
         val currentBookId = mediaItem?.mediaMetadata?.extras
             ?.getLong(PlaybackContract.EXTRA_BOOK_ID, -1L)
@@ -226,6 +252,52 @@ class NowPlayingViewModel(
         } else {
             null
         }
+        val liveProgressMs = computeLiveBookProgressMs(
+            tracks = details.tracks,
+            currentTrackId = currentTrackId,
+            currentTrackPositionMs = currentTrackPositionMs
+        )
+        val playbackForProgress = details.playbackState?.copy(positionMs = liveProgressMs)
+            ?: currentTrackId?.let { trackId ->
+                PlaybackStateEntity(
+                    bookId = bookId,
+                    trackId = trackId,
+                    positionMs = currentTrackPositionMs.coerceAtLeast(0L),
+                    speed = controller?.playbackParameters?.speed ?: 1f,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+        val computedProgress = BookProgressCalculator.calculate(
+            tracks = details.tracks,
+            playbackState = playbackForProgress
+        )
+        val chapters = details.chapters.map { chapter ->
+            ChapterUi(
+                id = chapter.id,
+                title = chapter.title,
+                startMs = chapter.startMs,
+                endMs = chapter.endMs,
+                trackId = chapter.trackId,
+                isCurrent = chapter.startMs <= liveProgressMs &&
+                    (chapter.endMs == null || liveProgressMs < chapter.endMs)
+            )
+        }.ifEmpty {
+            var cursor = 0L
+            details.tracks.map { track ->
+                val start = cursor
+                val end = track.durationMs?.let { start + it }
+                cursor = end ?: cursor
+                ChapterUi(
+                    id = -track.id,
+                    title = track.title,
+                    startMs = start,
+                    endMs = end,
+                    trackId = track.id,
+                    isCurrent = track.id == currentTrackId
+                )
+            }
+        }
+        val currentChapterId = chapters.firstOrNull { it.isCurrent }?.id
         val settings = details.settings
         val mappedTracks = details.tracks.map { track ->
             BookTrackUi(
@@ -250,13 +322,33 @@ class NowPlayingViewModel(
         mutableUiState.update { current ->
             current.copy(
                 bookTitle = details.book?.title ?: current.bookTitle,
+                coverArtPath = details.book?.coverArtPath ?: current.coverArtPath,
                 tracks = mappedTracks,
+                chapters = chapters,
                 bookmarks = mappedBookmarks,
                 skipBackSec = settings?.skipBackSec ?: current.skipBackSec,
                 skipForwardSec = settings?.skipForwardSec ?: current.skipForwardSec,
-                speed = settings?.playbackSpeed ?: current.speed
+                speed = settings?.playbackSpeed ?: current.speed,
+                bookProgressMs = computedProgress.progressMs,
+                bookTotalMs = computedProgress.totalMs,
+                timeLeftMs = computedProgress.remainingMs,
+                bookProgressPercent = computedProgress.percent,
+                isBookProgressEstimated = computedProgress.isEstimated,
+                currentChapterId = currentChapterId
             )
         }
+    }
+
+    private fun computeLiveBookProgressMs(
+        tracks: List<com.avnixm.avdibook.data.db.entity.TrackEntity>,
+        currentTrackId: Long?,
+        currentTrackPositionMs: Long
+    ): Long {
+        if (tracks.isEmpty()) return 0L
+        val sorted = tracks.sortedBy { it.trackIndex }
+        val currentIndex = sorted.indexOfFirst { it.id == currentTrackId }.takeIf { it >= 0 } ?: 0
+        val previous = sorted.take(currentIndex).sumOf { it.durationMs ?: 0L }
+        return (previous + currentTrackPositionMs.coerceAtLeast(0L)).coerceAtLeast(0L)
     }
 
     private suspend fun mutateSettings(change: (BookSettingsEntity) -> BookSettingsEntity) {

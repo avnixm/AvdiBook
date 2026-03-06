@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.avnixm.avdibook.AppContainer
+import com.avnixm.avdibook.data.repository.BackupRepository
 import com.avnixm.avdibook.data.repository.LibraryRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,7 +22,8 @@ import kotlinx.coroutines.launch
 
 class LibraryViewModel(
     application: Application,
-    private val libraryRepository: LibraryRepository
+    private val libraryRepository: LibraryRepository,
+    private val backupRepository: BackupRepository
 ) : AndroidViewModel(application) {
     private val isImporting = MutableStateFlow(false)
     private val hasSkippedImport = MutableStateFlow(false)
@@ -43,7 +46,12 @@ class LibraryViewModel(
                     trackCount = item.trackCount,
                     hasResume = item.playbackState != null,
                     resumePositionMs = item.playbackState?.positionMs ?: 0L,
-                    lastPlayedAt = item.book.lastPlayedAt
+                    lastPlayedAt = item.book.lastPlayedAt,
+                    progressPercent = item.progress.percent,
+                    timeLeftMs = item.progress.remainingMs,
+                    isProgressEstimated = item.progress.isEstimated,
+                    isMissingSource = item.book.isMissingSource,
+                    coverArtPath = item.book.coverArtPath
                 )
             }
         )
@@ -53,6 +61,14 @@ class LibraryViewModel(
         initialValue = LibraryUiState()
     )
 
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                libraryRepository.refreshMissingSourceFlags()
+            }
+        }
+    }
+
     fun importFolder(treeUriString: String) {
         viewModelScope.launch {
             isImporting.update { true }
@@ -61,7 +77,38 @@ class LibraryViewModel(
 
             result.exceptionOrNull()?.let { throwable ->
                 eventsFlow.emit(LibraryEvent.ShowMessage(throwable.message ?: "Folder import failed."))
+                return@launch
             }
+            libraryRepository.refreshMissingSourceFlags()
+            eventsFlow.emit(LibraryEvent.ShowMessage("Folder imported."))
+        }
+    }
+
+    fun exportBackup(destinationUriString: String) {
+        viewModelScope.launch {
+            val result = backupRepository.exportToUri(android.net.Uri.parse(destinationUriString))
+            result.exceptionOrNull()?.let { throwable ->
+                eventsFlow.emit(LibraryEvent.ShowMessage(throwable.message ?: "Backup export failed."))
+                return@launch
+            }
+            eventsFlow.emit(LibraryEvent.ShowMessage("Backup exported successfully."))
+        }
+    }
+
+    fun restoreBackup(sourceUriString: String) {
+        viewModelScope.launch {
+            val uri = android.net.Uri.parse(sourceUriString)
+            val validateResult = backupRepository.validateBackup(uri)
+            validateResult.exceptionOrNull()?.let { throwable ->
+                eventsFlow.emit(LibraryEvent.ShowMessage(throwable.message ?: "Invalid backup file."))
+                return@launch
+            }
+            val result = backupRepository.restoreFromUri(uri)
+            result.exceptionOrNull()?.let { throwable ->
+                eventsFlow.emit(LibraryEvent.ShowMessage(throwable.message ?: "Backup restore failed."))
+                return@launch
+            }
+            eventsFlow.emit(LibraryEvent.ShowMessage("Backup restored."))
         }
     }
 
@@ -73,12 +120,22 @@ class LibraryViewModel(
 
             result.exceptionOrNull()?.let { throwable ->
                 eventsFlow.emit(LibraryEvent.ShowMessage(throwable.message ?: "File import failed."))
+                return@launch
             }
+            libraryRepository.refreshMissingSourceFlags()
+            eventsFlow.emit(LibraryEvent.ShowMessage("Files imported."))
         }
     }
 
     fun onBookSelected(bookId: Long) {
         viewModelScope.launch {
+            val selected = uiState.value.books.firstOrNull { it.bookId == bookId }
+            if (selected?.isMissingSource == true) {
+                eventsFlow.emit(
+                    LibraryEvent.ShowMessage("Source access missing. Re-import/relink required.")
+                )
+                return@launch
+            }
             eventsFlow.emit(LibraryEvent.NavigateToBook(bookId))
         }
     }
@@ -93,7 +150,8 @@ class LibraryViewModel(
                 initializer {
                     LibraryViewModel(
                         application = application,
-                        libraryRepository = appContainer.libraryRepository
+                        libraryRepository = appContainer.libraryRepository,
+                        backupRepository = appContainer.backupRepository
                     )
                 }
             }

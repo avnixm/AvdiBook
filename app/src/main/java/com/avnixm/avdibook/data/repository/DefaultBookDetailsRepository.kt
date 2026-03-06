@@ -28,14 +28,18 @@ class DefaultBookDetailsRepository(
     private val appPreferences: AppPreferences
 ) : BookDetailsRepository {
     override fun observeBookDetails(bookId: Long): Flow<BookDetailsData> {
-        return combine(
+        val firstFive = combine(
             bookDao.observeBookById(bookId),
             trackDao.observeTracksByBook(bookId),
             chapterDao.observeByBook(bookId),
             bookmarkDao.observeByBook(bookId),
-            playbackDao.observePlaybackState(bookId),
-            bookSettingsDao.observeByBook(bookId)
-        ) { book, tracks, chapters, bookmarks, playbackState, settings ->
+            playbackDao.observePlaybackState(bookId)
+        ) { book, tracks, chapters, bookmarks, playbackState ->
+            Triple(Pair(book, tracks), Pair(chapters, bookmarks), playbackState)
+        }
+        return firstFive.combine(bookSettingsDao.observeByBook(bookId)) { (bookAndTracks, chaptersAndBookmarks, playbackState), settings ->
+            val (book, tracks) = bookAndTracks
+            val (chapters, bookmarks) = chaptersAndBookmarks
             BookDetailsData(
                 book = book,
                 tracks = tracks,

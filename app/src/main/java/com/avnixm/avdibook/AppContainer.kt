@@ -2,8 +2,11 @@ package com.avnixm.avdibook
 
 import android.content.Context
 import com.avnixm.avdibook.data.db.AvdiBookDatabase
+import com.avnixm.avdibook.data.metadata.ChapterExtractionScheduler
 import com.avnixm.avdibook.data.prefs.AppPreferences
+import com.avnixm.avdibook.data.repository.BackupRepository
 import com.avnixm.avdibook.data.repository.BookDetailsRepository
+import com.avnixm.avdibook.data.repository.DefaultBackupRepository
 import com.avnixm.avdibook.data.repository.DefaultBookDetailsRepository
 import com.avnixm.avdibook.data.repository.DefaultLibraryRepository
 import com.avnixm.avdibook.data.repository.DefaultPlaybackRepository
@@ -16,10 +19,17 @@ class AppContainer(context: Context) {
 
     val database: AvdiBookDatabase = AvdiBookDatabase.create(applicationContext)
     val appPreferences = AppPreferences(applicationContext)
+    private val extractionScheduler = ChapterExtractionScheduler(
+        appContext = applicationContext,
+        bookDao = database.bookDao(),
+        trackDao = database.trackDao(),
+        chapterDao = database.chapterDao()
+    )
 
     val libraryRepository: LibraryRepository = DefaultLibraryRepository(
         context = applicationContext,
-        database = database
+        database = database,
+        extractionScheduler = extractionScheduler
     )
 
     val playbackRepository: PlaybackRepository = DefaultPlaybackRepository(
@@ -33,7 +43,14 @@ class AppContainer(context: Context) {
         playbackDao = database.playbackDao(),
         bookSettingsDao = database.bookSettingsDao(),
         bookmarkDao = database.bookmarkDao(),
+        chapterDao = database.chapterDao(),
         appPreferences = appPreferences
+    )
+
+    val backupRepository: BackupRepository = DefaultBackupRepository(
+        appContext = applicationContext,
+        database = database,
+        libraryRepository = libraryRepository
     )
 
     val playbackControllerFacade = PlaybackControllerFacade(

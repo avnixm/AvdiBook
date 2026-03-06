@@ -20,20 +20,23 @@ object PlaybackClient {
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
     suspend fun connect(context: Context): MediaController {
-        controller?.let { return it }
+        controller?.takeIf { it.isConnected }?.let { return it }
+        controller = null
 
         val token = SessionToken(
             context,
             ComponentName(context, PlaybackService::class.java)
         )
 
-        val future = controllerFuture ?: MediaController.Builder(context, token).buildAsync().also {
-            controllerFuture = it
-        }
+        val future = controllerFuture?.takeIf { !it.isDone || !it.isCancelled }
+            ?: MediaController.Builder(context, token).buildAsync().also {
+                controllerFuture = it
+            }
 
-        val builtController = future.await()
-        controller = builtController
-        return builtController
+        return runCatching { future.await() }
+            .onSuccess { controller = it }
+            .onFailure { controllerFuture = null }
+            .getOrThrow()
     }
 
     fun release() {

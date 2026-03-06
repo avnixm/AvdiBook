@@ -16,4 +16,14 @@ object AudioMetadataExtractor {
             runCatching { retriever.release() }
         }
     }
+
+    fun extractCoverArt(context: Context, uri: Uri): ByteArray? {
+        val retriever = MediaMetadataRetriever()
+        return runCatching {
+            retriever.setDataSource(context, uri)
+            retriever.embeddedPicture
+        }.getOrNull().also {
+            runCatching { retriever.release() }
+        }
+    }
 }

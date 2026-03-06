@@ -28,7 +28,7 @@ import com.avnixm.avdibook.data.db.entity.TrackEntity
         BookmarkEntity::class,
         ChapterEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AvdiBookDatabase : RoomDatabase() {
@@ -110,6 +110,12 @@ abstract class AvdiBookDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN coverArtPath TEXT")
+            }
+        }
+
         fun create(context: Context): AvdiBookDatabase {
             return Room.databaseBuilder(
                 context,
@@ -118,6 +124,7 @@ abstract class AvdiBookDatabase : RoomDatabase() {
             )
                 .addMigrations(MIGRATION_1_2)
                 .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_3_4)
                 .build()
         }
     }
