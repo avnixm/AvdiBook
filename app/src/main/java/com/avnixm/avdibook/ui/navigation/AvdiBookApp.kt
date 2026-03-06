@@ -158,8 +158,12 @@ private fun MainAppGraph(
         bottomBar = {
             if (!hideBottomBar) {
                 Column {
+                    val isOnNowPlaying = currentRoute == ROUTE_NOW_PLAYING_EMPTY ||
+                        currentRoute == ROUTE_NOW_PLAYING
                     AnimatedVisibility(
-                        visible = chromeUiState.miniPlayer.isVisible && chromeUiState.miniPlayer.bookId != null,
+                        visible = chromeUiState.miniPlayer.isVisible &&
+                            chromeUiState.miniPlayer.bookId != null &&
+                            !isOnNowPlaying,
                         enter = slideInVertically { it } + fadeIn(),
                         exit = slideOutVertically { it } + fadeOut()
                     ) {
