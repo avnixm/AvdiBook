@@ -60,8 +60,12 @@ object AppMotion {
     val medium = 280
     val long = 420
 
+    fun resolvedDuration(enabled: Boolean, durationMillis: Int = medium): Int {
+        return if (enabled) durationMillis else 0
+    }
+
     fun spec(enabled: Boolean, durationMillis: Int = medium) =
-        tween<Int>(if (enabled) durationMillis else 0, easing = standard)
+        tween<Int>(resolvedDuration(enabled, durationMillis), easing = standard)
 }
 
 @Composable

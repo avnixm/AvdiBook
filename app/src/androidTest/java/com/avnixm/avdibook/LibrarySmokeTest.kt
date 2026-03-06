@@ -12,7 +12,7 @@ class LibrarySmokeTest {
 
     @Test
     fun libraryScreen_rendersImportActions() {
-        composeRule.onNodeWithText("Import folder").assertIsDisplayed()
-        composeRule.onNodeWithText("Import files").assertIsDisplayed()
+        composeRule.onNodeWithText("Import Folder").assertIsDisplayed()
+        composeRule.onNodeWithText("Import Files").assertIsDisplayed()
     }
 }
