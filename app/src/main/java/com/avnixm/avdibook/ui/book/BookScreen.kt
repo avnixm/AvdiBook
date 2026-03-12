@@ -27,12 +27,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
@@ -130,6 +135,7 @@ fun BookRoute(
                         viewModel.onNotificationPermissionResult(isGranted = true)
                     }
                 }
+                BookEvent.BookDeleted -> onBack()
             }
         }
     }
@@ -150,7 +156,9 @@ fun BookRoute(
         onAutoRewindSelected = viewModel::onAutoRewindSelected,
         onAutoRewindThresholdSelected = viewModel::onAutoRewindThresholdSelected,
         onCustomizeSettingsForBook = viewModel::customizeSettingsForBook,
-        onResetSettingsToGlobal = viewModel::resetSettingsToGlobal
+        onResetSettingsToGlobal = viewModel::resetSettingsToGlobal,
+        onDeleteBook = viewModel::deleteBook,
+        onRenameBook = viewModel::renameBook
     )
 }
 
@@ -172,11 +180,17 @@ fun BookScreen(
     onAutoRewindThresholdSelected: (Int) -> Unit,
     onCustomizeSettingsForBook: () -> Unit,
     onResetSettingsToGlobal: () -> Unit,
+    onDeleteBook: () -> Unit,
+    onRenameBook: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var isAddNoteDialogVisible by remember { mutableStateOf(false) }
     var bookmarkNote by remember { mutableStateOf("") }
+    var isMenuExpanded by remember { mutableStateOf(false) }
+    var isDeleteConfirmVisible by remember { mutableStateOf(false) }
+    var isRenameDialogVisible by remember { mutableStateOf(false) }
+    var renameText by remember(uiState.title) { mutableStateOf(uiState.title) }
     val haptics = LocalHapticFeedback.current
     val windowSize = rememberAppWindowSize()
     val horizontalPadding = when (windowSize) {
@@ -202,6 +216,51 @@ fun BookScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { isMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isMenuExpanded,
+                            onDismissRequest = { isMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null)
+                                },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    renameText = uiState.title
+                                    isRenameDialogVisible = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Remove from library",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isDeleteConfirmVisible = true
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -313,6 +372,60 @@ fun BookScreen(
             }
         )
     }
+
+    if (isDeleteConfirmVisible) {
+        AlertDialog(
+            onDismissRequest = { isDeleteConfirmVisible = false },
+            title = { Text("Remove from library?") },
+            text = {
+                Text(
+                    "\"${uiState.title}\" will be removed from your library. " +
+                        "Your audio files will not be deleted."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isDeleteConfirmVisible = false
+                        onDeleteBook()
+                    }
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isDeleteConfirmVisible = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (isRenameDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { isRenameDialogVisible = false },
+            title = { Text("Rename book") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("Book title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isRenameDialogVisible = false
+                        onRenameBook(renameText.trim())
+                    },
+                    enabled = renameText.isNotBlank()
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { isRenameDialogVisible = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -413,7 +526,7 @@ private fun BookHeroHeader(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "Source missing. Tap to relink from book settings.",
+                        text = "Audio files cannot be found. Re-import this book or remove it from the library using the ⋮ menu.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )

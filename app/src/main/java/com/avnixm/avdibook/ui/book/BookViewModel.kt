@@ -14,6 +14,7 @@ import com.avnixm.avdibook.data.db.entity.BookSettingsEntity
 import com.avnixm.avdibook.data.model.BookDetailsData
 import com.avnixm.avdibook.data.prefs.AppPreferences
 import com.avnixm.avdibook.data.repository.BookDetailsRepository
+import com.avnixm.avdibook.data.repository.LibraryRepository
 import com.avnixm.avdibook.playback.PlaybackContract
 import com.avnixm.avdibook.playback.PlaybackControllerFacade
 import kotlinx.coroutines.Job
@@ -38,6 +39,7 @@ class BookViewModel(
     private val autoPlay: Boolean = false,
     private val bookDetailsRepository: BookDetailsRepository,
     private val playbackControllerFacade: PlaybackControllerFacade,
+    private val libraryRepository: LibraryRepository,
     private val appPreferences: AppPreferences
 ) : AndroidViewModel(application) {
     private val eventsFlow = MutableSharedFlow<BookEvent>()
@@ -257,11 +259,33 @@ class BookViewModel(
         }
     }
 
+    fun deleteBook() {
+        viewModelScope.launch {
+            val result = libraryRepository.deleteBook(bookId)
+            if (result.isSuccess) {
+                eventsFlow.emit(BookEvent.BookDeleted)
+            } else {
+                eventsFlow.emit(BookEvent.ShowMessage("Failed to remove book."))
+            }
+        }
+    }
+
+    fun renameBook(newTitle: String) {
+        viewModelScope.launch {
+            val result = libraryRepository.renameBook(bookId, newTitle)
+            if (result.isFailure) {
+                eventsFlow.emit(
+                    BookEvent.ShowMessage(result.exceptionOrNull()?.message ?: "Rename failed.")
+                )
+            }
+        }
+    }
+
     private fun requestPlayback(request: PendingPlaybackRequest) {
         viewModelScope.launch {
             if (latestDetails?.book?.isMissingSource == true) {
                 eventsFlow.emit(
-                    BookEvent.ShowMessage("Source access missing. Re-import/relink required.")
+                    BookEvent.ShowMessage("Audio source is unavailable. Please re-import this book.")
                 )
                 return@launch
             }
@@ -332,6 +356,7 @@ class BookViewModel(
                     autoPlay = autoPlay,
                     bookDetailsRepository = appContainer.bookDetailsRepository,
                     playbackControllerFacade = appContainer.playbackControllerFacade,
+                    libraryRepository = appContainer.libraryRepository,
                     appPreferences = appContainer.appPreferences
                 )
             }
@@ -346,6 +371,7 @@ private data class PendingPlaybackRequest(
 
 sealed interface BookEvent {
     data object RequestNotificationPermission : BookEvent
+    data object BookDeleted : BookEvent
     data class NavigateToNowPlaying(val bookId: Long) : BookEvent
     data class ShowMessage(val message: String) : BookEvent
 }

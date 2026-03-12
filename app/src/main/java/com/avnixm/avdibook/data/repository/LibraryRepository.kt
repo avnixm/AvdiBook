@@ -20,4 +20,8 @@ interface LibraryRepository {
     suspend fun refreshMissingSourceFlags()
 
     suspend fun backfillMissingCoverArt()
+
+    suspend fun deleteBook(bookId: Long): Result<Unit>
+
+    suspend fun renameBook(bookId: Long, title: String): Result<Unit>
 }

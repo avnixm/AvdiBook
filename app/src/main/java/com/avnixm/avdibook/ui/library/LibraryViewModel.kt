@@ -130,14 +130,16 @@ class LibraryViewModel(
 
     fun onBookSelected(bookId: Long) {
         viewModelScope.launch {
-            val selected = uiState.value.books.firstOrNull { it.bookId == bookId }
-            if (selected?.isMissingSource == true) {
-                eventsFlow.emit(
-                    LibraryEvent.ShowMessage("Source access missing. Re-import/relink required.")
-                )
-                return@launch
-            }
             eventsFlow.emit(LibraryEvent.NavigateToBook(bookId))
+        }
+    }
+
+    fun deleteBook(bookId: Long) {
+        viewModelScope.launch {
+            val result = libraryRepository.deleteBook(bookId)
+            if (result.isFailure) {
+                eventsFlow.emit(LibraryEvent.ShowMessage("Failed to remove book."))
+            }
         }
     }
 

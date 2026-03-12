@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -793,7 +794,15 @@ private fun BrowseSheetContent(
                     )
                 }
             } else {
+                val chapterListState = rememberLazyListState()
+                val currentIndex = chapters.indexOfFirst { it.isCurrent }.takeIf { it >= 0 }
+                LaunchedEffect(currentIndex) {
+                    if (currentIndex != null) {
+                        chapterListState.animateScrollToItem(currentIndex)
+                    }
+                }
                 LazyColumn(
+                    state = chapterListState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(400.dp),

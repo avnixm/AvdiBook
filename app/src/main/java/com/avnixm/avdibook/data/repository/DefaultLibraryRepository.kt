@@ -162,6 +162,19 @@ class DefaultLibraryRepository(
         }
     }
 
+    override suspend fun deleteBook(bookId: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            bookDao.deleteBook(bookId)
+        }
+    }
+
+    override suspend fun renameBook(bookId: Long, title: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(title.isNotBlank()) { "Book title cannot be empty." }
+            bookDao.updateTitle(bookId, title.trim())
+        }
+    }
+
     private fun collectAudioFiles(root: DocumentFile): List<DocumentFile> {
         val result = mutableListOf<DocumentFile>()
 
@@ -206,7 +219,9 @@ class DefaultLibraryRepository(
     }
 
     companion object {
-        private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "aac", "ogg", "wav", "flac", "opus")
+        private val AUDIO_EXTENSIONS = setOf(
+            "mp3", "m4a", "m4b", "aac", "ogg", "wav", "flac", "opus", "aiff", "aif"
+        )
     }
 
     private suspend fun isSourceMissing(sourceType: Int, sourceUri: String, bookId: Long): Boolean {
