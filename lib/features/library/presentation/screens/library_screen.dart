@@ -12,18 +12,43 @@ import 'package:avdibook/shared/providers/app_bootstrap_provider.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/listening_analytics_provider.dart';
 
-class LibraryScreen extends ConsumerWidget {
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  BookStatus? _statusFilter;
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final library = ref.watch(libraryProvider);
     final analytics = ref.watch(listeningAnalyticsProvider);
+    final analyticsByBook = analytics.byBook;
 
     final sorted = [...library]
       ..sort((a, b) => b.importedAt.compareTo(a.importedAt));
+
+    final statusCounts = {
+      BookStatus.newBook: 0,
+      BookStatus.started: 0,
+      BookStatus.finished: 0,
+    };
+    for (final book in sorted) {
+      final listened = analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
+      final resolved = _resolveStatus(book, listened);
+      statusCounts[resolved] = (statusCounts[resolved] ?? 0) + 1;
+    }
+
+    final filtered = sorted.where((book) {
+      if (_statusFilter == null) return true;
+      final listened = analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
+      return _resolveStatus(book, listened) == _statusFilter;
+    }).toList();
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -64,26 +89,108 @@ class LibraryScreen extends ConsumerWidget {
               ),
             )
           else
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _StatusCounterChip(
+                          icon: Icons.fiber_new_rounded,
+                          label: 'New',
+                          count: statusCounts[BookStatus.newBook] ?? 0,
+                          active: _statusFilter == BookStatus.newBook,
+                          onTap: () => setState(() {
+                            _statusFilter = _statusFilter == BookStatus.newBook
+                                ? null
+                                : BookStatus.newBook;
+                          }),
+                        ),
+                        _StatusCounterChip(
+                          icon: Icons.auto_stories_rounded,
+                          label: 'Started',
+                          count: statusCounts[BookStatus.started] ?? 0,
+                          active: _statusFilter == BookStatus.started,
+                          onTap: () => setState(() {
+                            _statusFilter = _statusFilter == BookStatus.started
+                                ? null
+                                : BookStatus.started;
+                          }),
+                        ),
+                        _StatusCounterChip(
+                          icon: Icons.task_alt_rounded,
+                          label: 'Finished',
+                          count: statusCounts[BookStatus.finished] ?? 0,
+                          active: _statusFilter == BookStatus.finished,
+                          onTap: () => setState(() {
+                            _statusFilter = _statusFilter == BookStatus.finished
+                                ? null
+                                : BookStatus.finished;
+                          }),
+                        ),
+                      ],
+                    ),
+                    if (_statusFilter != null) ...[
+                      const SizedBox(height: 10),
+                      TextButton.icon(
+                        onPressed: () => setState(() => _statusFilter = null),
+                        icon: const Icon(Icons.filter_alt_off_rounded),
+                        label: const Text('Clear filter'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          if (sorted.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              sliver: SliverList.separated(
-                itemBuilder: (context, index) {
-                  final book = sorted[index];
-                  final stats = analytics.byBook[book.id];
-                  return _LibraryBookTile(
-                    book: book,
-                    listened: stats?.totalDuration ?? Duration.zero,
-                    onOpen: () => context.push(AppRoutes.playerPath(book.id)),
-                    onRemove: () => _removeBook(context, ref, book),
-                  );
-                },
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemCount: sorted.length,
-              ),
+              sliver: filtered.isEmpty
+                  ? SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          'No books in this category yet.',
+                          style: tt.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    )
+                  : SliverList.separated(
+                      itemBuilder: (context, index) {
+                        final book = filtered[index];
+                        final stats = analytics.byBook[book.id];
+                        final listened = stats?.totalDuration ?? Duration.zero;
+                        return _LibraryBookTile(
+                          book: book,
+                          listened: listened,
+                          status: _resolveStatus(book, listened),
+                          onOpen: () =>
+                              context.push(AppRoutes.playerPath(book.id)),
+                          onRemove: () => _removeBook(context, ref, book),
+                        );
+                      },
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemCount: filtered.length,
+                    ),
             ),
         ],
       ),
     );
+  }
+
+  BookStatus _resolveStatus(Audiobook book, Duration listened) {
+    if (book.status != BookStatus.newBook) return book.status;
+    if (book.progress >= 0.98) return BookStatus.finished;
+    if (book.progress > 0.01 || listened > Duration.zero) {
+      return BookStatus.started;
+    }
+    return BookStatus.newBook;
   }
 
   Future<void> _removeBook(
@@ -109,12 +216,14 @@ class _LibraryBookTile extends StatelessWidget {
   const _LibraryBookTile({
     required this.book,
     required this.listened,
+    required this.status,
     required this.onOpen,
     required this.onRemove,
   });
 
   final Audiobook book;
   final Duration listened;
+  final BookStatus status;
   final VoidCallback onOpen;
   final VoidCallback onRemove;
 
@@ -122,6 +231,7 @@ class _LibraryBookTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final progressPercent = (book.progress.clamp(0.0, 1.0) * 100).round();
 
     return Material(
       color: cs.surfaceContainerLow,
@@ -162,10 +272,16 @@ class _LibraryBookTile extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          _StatusBadge(status: status),
                           _MetaPill(
                             icon: Icons.menu_book_rounded,
                             label: '${book.chapterCount} chapters',
                           ),
+                          if (progressPercent > 0)
+                            _MetaPill(
+                              icon: Icons.timelapse_rounded,
+                              label: '$progressPercent% complete',
+                            ),
                           _MetaPill(
                             icon: Icons.graphic_eq_rounded,
                             label:
@@ -196,6 +312,89 @@ class _LibraryBookTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StatusCounterChip extends StatelessWidget {
+  const _StatusCounterChip({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return ExpressiveBounce(
+      child: ChoiceChip(
+        selected: active,
+        onSelected: (_) => onTap(),
+        avatar: Icon(icon, size: 16),
+        label: Text('$label ($count)'),
+        selectedColor: cs.secondaryContainer,
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+
+  final BookStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    final (icon, bg, fg) = switch (status) {
+      BookStatus.newBook => (
+          Icons.fiber_new_rounded,
+          cs.tertiaryContainer,
+          cs.onTertiaryContainer,
+        ),
+      BookStatus.started => (
+          Icons.auto_stories_rounded,
+          cs.primaryContainer,
+          cs.onPrimaryContainer,
+        ),
+      BookStatus.finished => (
+          Icons.task_alt_rounded,
+          cs.secondaryContainer,
+          cs.onSecondaryContainer,
+        ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 5),
+          Text(
+            status.label,
+            style: tt.labelSmall?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

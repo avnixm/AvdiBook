@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../../features/audiobooks/domain/models/audiobook.dart';
+import '../../../../shared/providers/app_bootstrap_provider.dart';
+import '../../../../shared/providers/app_state_provider.dart';
+import '../../../../shared/providers/library_provider.dart';
 import '../../../../shared/providers/listening_analytics_provider.dart';
 
 class PlayerState {
@@ -76,10 +79,16 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Duration _pendingListenDelta = Duration.zero;
   String? _trackedBookId;
   bool _wasPlaying = false;
+  DateTime _lastProgressPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   PlayerState build() {
+    final initialSpeed = ref.read(globalPlaybackSpeedProvider);
+    final initialVolume = ref.read(globalVolumeProvider);
+
     _player = AudioPlayer();
+    unawaited(_player.setSpeed(initialSpeed));
+    unawaited(_player.setVolume(initialVolume));
 
     _player.positionStream.listen((pos) {
       state = state.copyWith(position: pos);
@@ -93,7 +102,7 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _player.playerStateStream.listen((ps) {
       state = state.copyWith(isPlaying: ps.playing);
       if (_wasPlaying && !ps.playing) {
-        unawaited(_flushListeningDelta());
+        unawaited(_flushListeningDeltaAndPersistProgress());
       }
       _wasPlaying = ps.playing;
     });
@@ -107,16 +116,16 @@ class PlayerNotifier extends Notifier<PlayerState> {
     });
 
     ref.onDispose(() {
-      unawaited(_flushListeningDelta());
+      unawaited(_flushListeningDeltaAndPersistProgress());
       _player.dispose();
     });
 
-    return const PlayerState();
+    return PlayerState(speed: initialSpeed, volume: initialVolume);
   }
 
   Future<void> load(Audiobook book) async {
     if (state.bookId == book.id && state.isLoaded) return;
-    await _flushListeningDelta();
+    await _flushListeningDeltaAndPersistProgress();
     _trackedBookId = book.id;
     _lastTrackedPosition = Duration.zero;
     state = state.copyWith(isLoading: true, bookId: book.id, clearError: true);
@@ -155,6 +164,15 @@ class PlayerNotifier extends Notifier<PlayerState> {
 
       await _player.setAudioSource(source);
       await _player.setSpeed(state.speed);
+      await _player.setVolume(state.volume);
+      final resumeFrom = book.resumePosition;
+      if (resumeFrom != null && resumeFrom > Duration.zero) {
+        final duration = _player.duration;
+        final clamped = duration == null || resumeFrom <= duration
+            ? resumeFrom
+            : duration;
+        await _player.seek(clamped);
+      }
       state = state.copyWith(isLoading: false);
     } catch (_) {
       state = state.copyWith(
@@ -210,12 +228,14 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> setSpeed(double speed) async {
     await _player.setSpeed(speed);
     state = state.copyWith(speed: speed);
+    await ref.read(globalPlaybackSpeedProvider.notifier).set(speed);
   }
 
   Future<void> setVolume(double volume) async {
     final normalized = volume.clamp(0.0, 1.0);
     await _player.setVolume(normalized);
     state = state.copyWith(volume: normalized);
+    await ref.read(globalVolumeProvider.notifier).set(normalized);
   }
 
   Future<void> toggleShuffle() async {
@@ -273,7 +293,18 @@ class PlayerNotifier extends Notifier<PlayerState> {
     _pendingListenDelta += delta;
     if (_pendingListenDelta >= const Duration(seconds: 12)) {
       unawaited(_flushListeningDelta());
+      final now = DateTime.now();
+      if (now.difference(_lastProgressPersistAt) >=
+          const Duration(seconds: 20)) {
+        _lastProgressPersistAt = now;
+        unawaited(_persistBookProgress());
+      }
     }
+  }
+
+  Future<void> _flushListeningDeltaAndPersistProgress() async {
+    await _flushListeningDelta();
+    await _persistBookProgress();
   }
 
   Future<void> _flushListeningDelta() async {
@@ -286,6 +317,44 @@ class PlayerNotifier extends Notifier<PlayerState> {
     await ref
         .read(listeningAnalyticsProvider.notifier)
         .recordListening(bookId: bookId, delta: delta);
+  }
+
+  Future<void> _persistBookProgress() async {
+    final bookId = state.bookId;
+    if (bookId == null) return;
+
+    final library = ref.read(libraryProvider);
+    final index = library.indexWhere((book) => book.id == bookId);
+    if (index < 0) return;
+
+    final currentBook = library[index];
+    final totalMs = state.duration.inMilliseconds;
+    final positionMs = state.position.inMilliseconds;
+
+    double progress = currentBook.progress;
+    if (totalMs > 0) {
+      progress = (positionMs / totalMs).clamp(0.0, 1.0);
+    }
+
+    final status = BookStatus.fromProgress(progress);
+    final now = DateTime.now();
+    final updatedBook = currentBook.copyWith(
+      progress: progress,
+      resumePosition: state.position,
+      lastPlayedAt: now,
+      status: status,
+      completedAt: status == BookStatus.finished
+          ? (currentBook.completedAt ?? now)
+          : null,
+      clearCompletedAt: status != BookStatus.finished,
+    );
+
+    if (updatedBook == currentBook) return;
+
+    final nextLibrary = [...library];
+    nextLibrary[index] = updatedBook;
+    ref.read(libraryProvider.notifier).setLibrary(nextLibrary);
+    await ref.read(startupStorageServiceProvider).setLibraryItems(nextLibrary);
   }
 }
 
