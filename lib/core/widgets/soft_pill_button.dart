@@ -22,7 +22,7 @@ class SoftPillButton extends StatelessWidget {
       color: scheme.secondaryContainer,
       borderRadius: BorderRadius.circular(50),
       child: ExpressiveBounce(
-        enabled: onPressed != null,
+        enabled: true,
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(50),
