@@ -74,7 +74,7 @@ class _BookmarksScreenState extends ConsumerState<BookmarksScreen> {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final bookmarks = ref.watch(bookBookmarksProvider(widget.bookId));
 
     return Scaffold(

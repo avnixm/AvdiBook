@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../../features/audiobooks/data/repositories/audiobook_repository_impl.dart';
 import '../../../../features/audiobooks/data/services/audio_metadata_service.dart';
@@ -6,9 +7,9 @@ import '../../../../features/audiobooks/data/services/audiobook_mapper_service.d
 import '../../../../features/audiobooks/data/services/audiobook_parser_service.dart';
 import '../../../../features/audiobooks/domain/models/audiobook.dart';
 import '../../../../features/audiobooks/domain/repositories/audiobook_repository.dart';
-import '../../../../shared/providers/app_bootstrap_provider.dart';
 import '../../../../shared/providers/app_state_provider.dart';
 import '../../../../shared/providers/library_provider.dart';
+import '../../../../shared/providers/storage_providers.dart';
 import '../../data/services/library_import_service.dart';
 import '../../domain/models/imported_audiobook.dart';
 
@@ -96,7 +97,10 @@ class SetupController extends Notifier<SetupState> {
       final imported = await importer.importDirectory();
 
       // Allow empty folders to be imported successfully
-      await _normalizeMergeAndPersist(imported);
+      await _normalizeMergeAndPersist(
+        imported,
+        replaceRootPath: importer.lastSelectedDirectory,
+      );
 
       // Save the folder path for future rescanning
       if (importer.lastSelectedDirectory != null) {
@@ -157,7 +161,10 @@ class SetupController extends Notifier<SetupState> {
     try {
       final importer = ref.read(libraryImportServiceProvider);
       final imported = await importer.scanFromPath(savedPath);
-      await _normalizeMergeAndPersist(imported);
+      await _normalizeMergeAndPersist(
+        imported,
+        replaceRootPath: savedPath,
+      );
       return true;
     } on Exception catch (e) {
       final errorMsg = e.toString();
@@ -182,12 +189,26 @@ class SetupController extends Notifier<SetupState> {
     }
   }
 
-  Future<void> _normalizeMergeAndPersist(List<ImportedAudiobook> imported) async {
+  Future<void> _normalizeMergeAndPersist(
+    List<ImportedAudiobook> imported, {
+    String? replaceRootPath,
+  }) async {
     final mapper = ref.read(audiobookMapperServiceProvider);
     final repository = ref.read(audiobookRepositoryProvider);
 
     final normalized = await mapper.mapImported(imported);
-    await repository.addBooks(normalized);
+
+    if (replaceRootPath != null && replaceRootPath.trim().isNotEmpty) {
+      final existing = await repository.getLibrary();
+      final kept = existing
+          .where((book) => !_bookIntersectsRoot(book, replaceRootPath))
+          .toList();
+      final next = [...normalized, ...kept]
+        ..sort((a, b) => b.importedAt.compareTo(a.importedAt));
+      await repository.saveLibrary(next);
+    } else {
+      await repository.addBooks(normalized);
+    }
 
     final merged = await repository.getLibrary();
     ref.read(libraryProvider.notifier).setLibrary(merged);
@@ -200,5 +221,18 @@ class SetupController extends Notifier<SetupState> {
       isBusy: false,
       lastImported: normalized,
     );
+  }
+
+  bool _bookIntersectsRoot(Audiobook book, String rootPath) {
+    final normalizedRoot = p.normalize(rootPath);
+    final rootWithSeparator = normalizedRoot.endsWith(p.separator)
+        ? normalizedRoot
+        : '$normalizedRoot${p.separator}';
+
+    return book.sourcePaths.any((sourcePath) {
+      final normalizedSource = p.normalize(sourcePath);
+      return normalizedSource == normalizedRoot ||
+          normalizedSource.startsWith(rootWithSeparator);
+    });
   }
 }

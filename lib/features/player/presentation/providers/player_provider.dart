@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../../features/audiobooks/domain/models/audiobook.dart';
-import '../../../../shared/providers/app_bootstrap_provider.dart';
 import '../../../../shared/providers/app_state_provider.dart';
 import '../../../../shared/providers/library_provider.dart';
 import '../../../../shared/providers/listening_analytics_provider.dart';
+import '../../../../shared/providers/storage_providers.dart';
 
 class PlayerState {
   const PlayerState({

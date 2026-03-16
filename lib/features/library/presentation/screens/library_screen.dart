@@ -8,10 +8,10 @@ import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/utils/duration_formatter.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
-import 'package:avdibook/shared/providers/app_bootstrap_provider.dart';
 import 'package:avdibook/shared/providers/character_notes_provider.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/listening_analytics_provider.dart';
+import 'package:avdibook/shared/providers/storage_providers.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});

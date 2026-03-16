@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:avdibook/core/constants/app_constants.dart';
+import 'package:avdibook/shared/providers/preferences_provider.dart';
+import 'package:avdibook/shared/providers/storage_providers.dart';
 
-import '../../core/constants/app_constants.dart';
-import 'app_state_provider.dart';
 
 class Bookmark {
   const Bookmark({
@@ -80,8 +82,35 @@ class BookmarksNotifier extends Notifier<List<Bookmark>> {
       }
     }
 
+    unawaited(_hydrateFromDriftIfNeeded(raw));
+
     parsed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return parsed;
+  }
+
+  Future<void> _hydrateFromDriftIfNeeded(List<String> existingRaw) async {
+    if (existingRaw.isNotEmpty) return;
+
+    final storage = ref.read(startupStorageServiceProvider);
+    final fallback = await storage.loadBookmarksSnapshot();
+    if (fallback == null || fallback.isEmpty || !ref.mounted) {
+      return;
+    }
+
+    final parsed = <Bookmark>[];
+    for (final item in fallback) {
+      try {
+        parsed.add(Bookmark.fromMap(jsonDecode(item) as Map<String, dynamic>));
+      } catch (_) {
+        // Skip malformed bookmark payloads.
+      }
+    }
+
+    parsed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    state = parsed;
+
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setStringList(StorageKeys.bookmarks, fallback);
   }
 
   Future<void> add({
@@ -150,10 +179,14 @@ class BookmarksNotifier extends Notifier<List<Bookmark>> {
 
   Future<void> _persist() async {
     final prefs = ref.read(sharedPreferencesProvider);
+    final encoded = state.map((b) => jsonEncode(b.toMap())).toList();
+
     await prefs.setStringList(
       StorageKeys.bookmarks,
-      state.map((b) => jsonEncode(b.toMap())).toList(),
+      encoded,
     );
+
+    await ref.read(startupStorageServiceProvider).saveBookmarksSnapshot(encoded);
   }
 }
 

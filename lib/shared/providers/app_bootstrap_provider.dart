@@ -1,15 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:avdibook/core/constants/app_constants.dart';
-import 'package:avdibook/features/setup/data/services/startup_storage_service.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
-
-final startupStorageServiceProvider = Provider<StartupStorageService>((ref) {
-  return StartupStorageService();
-});
+import 'package:avdibook/shared/providers/storage_providers.dart';
 
 final appBootstrapProvider = FutureProvider<String>((ref) async {
   final storage = ref.read(startupStorageServiceProvider);
+  await storage.ensureDriftMigration();
 
   final onboardingComplete = await storage.getOnboardingComplete();
   final setupComplete = await storage.getSetupComplete();

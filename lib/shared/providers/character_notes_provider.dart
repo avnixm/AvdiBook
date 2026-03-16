@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:async';
 
+import 'package:avdibook/shared/providers/preferences_provider.dart';
+import 'package:avdibook/shared/providers/storage_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
-
-import 'app_state_provider.dart';
 
 class BookCharacter {
   const BookCharacter({
@@ -59,7 +60,10 @@ class CharacterNotesNotifier extends Notifier<Map<String, List<BookCharacter>>> 
   Map<String, List<BookCharacter>> build() {
     final prefs = ref.watch(sharedPreferencesProvider);
     final raw = prefs.getString(_storageKey);
-    if (raw == null || raw.isEmpty) return const {};
+    if (raw == null || raw.isEmpty) {
+      unawaited(_hydrateFromDriftIfNeeded());
+      return const {};
+    }
 
     try {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
@@ -70,7 +74,31 @@ class CharacterNotesNotifier extends Notifier<Map<String, List<BookCharacter>>> 
         return MapEntry(bookId, entries);
       });
     } catch (_) {
+      unawaited(_hydrateFromDriftIfNeeded());
       return const {};
+    }
+  }
+
+  Future<void> _hydrateFromDriftIfNeeded() async {
+    final storage = ref.read(startupStorageServiceProvider);
+    final raw = await storage.loadCharacterNotesSnapshot();
+    if (raw == null || raw.isEmpty || !ref.mounted) return;
+
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final next = decoded.map((bookId, list) {
+        final entries = (list as List<dynamic>)
+            .map((item) => BookCharacter.fromJson(item as Map<String, dynamic>))
+            .toList();
+        return MapEntry(bookId, entries);
+      });
+
+      state = next;
+
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setString(_storageKey, raw);
+    } catch (_) {
+      // Ignore malformed fallback payloads.
     }
   }
 
@@ -143,6 +171,9 @@ class CharacterNotesNotifier extends Notifier<Map<String, List<BookCharacter>>> 
       ),
     );
     await prefs.setString(_storageKey, encoded);
+    await ref
+        .read(startupStorageServiceProvider)
+        .saveCharacterNotesSnapshot(encoded);
   }
 }
 

@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:avdibook/core/constants/app_constants.dart';
+import 'package:avdibook/shared/providers/preferences_provider.dart';
+import 'package:avdibook/shared/providers/storage_providers.dart';
 
-import '../../core/constants/app_constants.dart';
-import 'app_state_provider.dart';
 
 class BookListeningStats {
   const BookListeningStats({
@@ -119,13 +121,33 @@ class ListeningAnalyticsNotifier extends Notifier<ListeningAnalyticsState> {
   ListeningAnalyticsState build() {
     final prefs = ref.watch(sharedPreferencesProvider);
     final raw = prefs.getString(StorageKeys.listeningAnalytics);
-    if (raw == null || raw.isEmpty) return ListeningAnalyticsState.empty;
+    if (raw == null || raw.isEmpty) {
+      unawaited(_hydrateFromDriftIfNeeded());
+      return ListeningAnalyticsState.empty;
+    }
 
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       return ListeningAnalyticsState.fromMap(map);
     } catch (_) {
+      unawaited(_hydrateFromDriftIfNeeded());
       return ListeningAnalyticsState.empty;
+    }
+  }
+
+  Future<void> _hydrateFromDriftIfNeeded() async {
+    final storage = ref.read(startupStorageServiceProvider);
+    final raw = await storage.loadListeningAnalyticsSnapshot();
+    if (raw == null || raw.isEmpty || !ref.mounted) return;
+
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      state = ListeningAnalyticsState.fromMap(map);
+
+      final prefs = ref.read(sharedPreferencesProvider);
+      await prefs.setString(StorageKeys.listeningAnalytics, raw);
+    } catch (_) {
+      // Ignore malformed fallback payloads.
     }
   }
 
@@ -170,10 +192,16 @@ class ListeningAnalyticsNotifier extends Notifier<ListeningAnalyticsState> {
 
   Future<void> _persist() async {
     final prefs = ref.read(sharedPreferencesProvider);
+    final encoded = jsonEncode(state.toMap());
+
     await prefs.setString(
       StorageKeys.listeningAnalytics,
-      jsonEncode(state.toMap()),
+      encoded,
     );
+
+    await ref
+        .read(startupStorageServiceProvider)
+        .saveListeningAnalyticsSnapshot(encoded);
   }
 }
 

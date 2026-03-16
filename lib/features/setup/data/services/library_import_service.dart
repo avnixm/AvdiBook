@@ -35,7 +35,8 @@ class LibraryImportService {
       }
 
       final paths = result.paths.whereType<String>().toList();
-      return _groupPathsIntoBooks(paths);
+      final inferredRoot = _inferCommonRootDirectory(paths);
+      return _groupPathsIntoBooks(paths, rootDirectoryPath: inferredRoot);
     } catch (e) {
       _log('Error importing files: $e');
       rethrow;
@@ -97,7 +98,10 @@ class LibraryImportService {
 
       _log('Found ${supportedPaths.length} supported audio files');
 
-      return _groupPathsIntoBooks(supportedPaths);
+      return _groupPathsIntoBooks(
+        supportedPaths,
+        rootDirectoryPath: selectedDirectory,
+      );
     } catch (e) {
       _log('Error importing directory: $e');
       rethrow;
@@ -145,7 +149,10 @@ class LibraryImportService {
 
       _log('Found ${supportedPaths.length} supported audio files');
 
-      return _groupPathsIntoBooks(supportedPaths);
+      return _groupPathsIntoBooks(
+        supportedPaths,
+        rootDirectoryPath: dirPath,
+      );
     } catch (e) {
       _log('Error rescanning directory: $e');
       rethrow;
@@ -205,28 +212,95 @@ class LibraryImportService {
     return supportedExtensions.contains(extension);
   }
 
-  List<ImportedAudiobook> _groupPathsIntoBooks(List<String> paths) {
+  String? _inferCommonRootDirectory(List<String> paths) {
+    if (paths.isEmpty) return null;
+
+    final allDirSegments = paths
+        .map((path) => p.split(p.normalize(p.dirname(path))))
+        .toList();
+
+    if (allDirSegments.any((segments) => segments.isEmpty)) {
+      return null;
+    }
+
+    final first = allDirSegments.first;
+    var commonLength = first.length;
+
+    for (var i = 0; i < commonLength; i++) {
+      final segment = first[i];
+      final allMatch = allDirSegments.every((other) =>
+          other.length > i && other[i].toLowerCase() == segment.toLowerCase());
+      if (!allMatch) {
+        commonLength = i;
+        break;
+      }
+    }
+
+    if (commonLength == 0) return null;
+    return p.joinAll(first.take(commonLength));
+  }
+
+  List<ImportedAudiobook> _groupPathsIntoBooks(
+    List<String> paths, {
+    String? rootDirectoryPath,
+  }) {
     final grouped = <String, List<String>>{};
+    final groupTitles = <String, String>{};
+    final normalizedRoot =
+        rootDirectoryPath == null ? null : p.normalize(rootDirectoryPath);
 
     for (final path in paths) {
-      final parentFolderName = p.basename(p.dirname(path)).trim();
-      final fileTitle = p.basenameWithoutExtension(path).trim();
-      final groupKey =
+      final normalizedPath = p.normalize(path);
+      String groupKey;
+      String groupTitle;
+
+      if (normalizedRoot != null) {
+        final relativePath = p.relative(normalizedPath, from: normalizedRoot);
+        final segments = p.split(relativePath);
+
+        // For folder imports, root-level files are standalone books while
+        // any nested path is grouped under its top-level subfolder.
+        if (segments.isNotEmpty && segments.first != '..' && relativePath != '.') {
+          if (segments.length == 1) {
+            groupKey = 'file::$normalizedPath';
+            groupTitle = p.basenameWithoutExtension(normalizedPath).trim();
+          } else {
+            final topLevelFolder = segments.first.trim();
+            groupKey = 'folder::${topLevelFolder.toLowerCase()}';
+            groupTitle = topLevelFolder;
+          }
+
+          grouped.putIfAbsent(groupKey, () => <String>[]).add(normalizedPath);
+          groupTitles.putIfAbsent(groupKey, () => groupTitle);
+          continue;
+        }
+      }
+
+      final parentFolderName = p.basename(p.dirname(normalizedPath)).trim();
+      final fileTitle = p.basenameWithoutExtension(normalizedPath).trim();
+      groupKey =
+          parentFolderName.isNotEmpty && parentFolderName != '.'
+              ? 'legacy::$parentFolderName'
+              : 'legacy-file::$fileTitle';
+      groupTitle =
           parentFolderName.isNotEmpty && parentFolderName != '.'
               ? parentFolderName
               : fileTitle;
 
-      grouped.putIfAbsent(groupKey, () => <String>[]).add(path);
+      grouped.putIfAbsent(groupKey, () => <String>[]).add(normalizedPath);
+      groupTitles.putIfAbsent(groupKey, () => groupTitle);
     }
 
     final books = grouped.entries.map((entry) {
-      final sortedPaths = [...entry.value]..sort();
+      final sortedPaths = [...entry.value]
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       final firstExtension =
           p.extension(sortedPaths.first).replaceFirst('.', '').toLowerCase();
+      final rawTitle = groupTitles[entry.key] ?? entry.key;
 
       return ImportedAudiobook(
         id: _uuid.v4(),
-        title: _cleanTitle(entry.key),
+        title: _cleanTitle(rawTitle),
         filePaths: sortedPaths,
         primaryFormat: firstExtension,
         importedAt: DateTime.now(),
