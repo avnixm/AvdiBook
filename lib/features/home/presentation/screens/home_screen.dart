@@ -12,6 +12,7 @@ import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:avdibook/core/widgets/section_header.dart';
 import 'package:avdibook/core/widgets/soft_icon_button.dart';
 import 'package:avdibook/core/widgets/soft_pill_button.dart';
+import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
 import 'package:avdibook/features/setup/presentation/providers/setup_controller.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/listening_analytics_provider.dart';
@@ -27,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
     final analytics = ref.watch(listeningAnalyticsProvider);
     final setupState = ref.watch(setupControllerProvider);
     final isBusy = setupState.isBusy;
+    final statusCounts = _buildStatusCounts(library, analytics.byBook);
 
     void importFiles() =>
         ref.read(setupControllerProvider.notifier).importFiles();
@@ -136,6 +138,11 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 14),
             _ExpressiveBounceIn(
+              delayMs: 80,
+              child: _LibraryStatusOverview(counts: statusCounts),
+            ),
+            const SizedBox(height: 14),
+            _ExpressiveBounceIn(
               delayMs: 120,
               child: _RecentHeroCard(
                 title: library.first.title,
@@ -208,6 +215,18 @@ class HomeScreen extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis,
                               style: text.bodySmall,
                             ),
+                            if (item != null) ...[
+                              const SizedBox(height: 6),
+                              _InlineBookStatusPill(
+                                status: _resolveStatus(
+                                  item,
+                                  analytics
+                                          .byBook[item.id]
+                                          ?.totalDuration ??
+                                      Duration.zero,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -221,6 +240,32 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+Map<BookStatus, int> _buildStatusCounts(
+  List<Audiobook> books,
+  Map<String, BookListeningStats> analyticsByBook,
+) {
+  final counts = {
+    BookStatus.newBook: 0,
+    BookStatus.started: 0,
+    BookStatus.finished: 0,
+  };
+  for (final book in books) {
+    final listened = analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
+    final status = _resolveStatus(book, listened);
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  return counts;
+}
+
+BookStatus _resolveStatus(Audiobook book, Duration listened) {
+  if (book.status != BookStatus.newBook) return book.status;
+  if (book.progress >= 0.98) return BookStatus.finished;
+  if (book.progress > 0.01 || listened > Duration.zero) {
+    return BookStatus.started;
+  }
+  return BookStatus.newBook;
 }
 
 class _ExpressiveBounceIn extends StatelessWidget {
@@ -330,6 +375,148 @@ class _ListeningAnalyticsCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LibraryStatusOverview extends StatelessWidget {
+  const _LibraryStatusOverview({required this.counts});
+
+  final Map<BookStatus, int> counts;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        color: scheme.surfaceContainerHigh,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Library status',
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _StatusSummaryPill(
+                icon: Icons.fiber_new_rounded,
+                label: 'New',
+                count: counts[BookStatus.newBook] ?? 0,
+                color: scheme.tertiaryContainer,
+                foreground: scheme.onTertiaryContainer,
+              ),
+              _StatusSummaryPill(
+                icon: Icons.auto_stories_rounded,
+                label: 'Started',
+                count: counts[BookStatus.started] ?? 0,
+                color: scheme.primaryContainer,
+                foreground: scheme.onPrimaryContainer,
+              ),
+              _StatusSummaryPill(
+                icon: Icons.task_alt_rounded,
+                label: 'Finished',
+                count: counts[BookStatus.finished] ?? 0,
+                color: scheme.secondaryContainer,
+                foreground: scheme.onSecondaryContainer,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusSummaryPill extends StatelessWidget {
+  const _StatusSummaryPill({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.foreground,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: foreground),
+          const SizedBox(width: 6),
+          Text(
+            '$label ($count)',
+            style: text.labelMedium?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineBookStatusPill extends StatelessWidget {
+  const _InlineBookStatusPill({required this.status});
+
+  final BookStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    final (color, foreground) = switch (status) {
+      BookStatus.newBook => (
+          scheme.tertiaryContainer,
+          scheme.onTertiaryContainer,
+        ),
+      BookStatus.started => (
+          scheme.primaryContainer,
+          scheme.onPrimaryContainer,
+        ),
+      BookStatus.finished => (
+          scheme.secondaryContainer,
+          scheme.onSecondaryContainer,
+        ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.label,
+        style: text.labelSmall?.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
