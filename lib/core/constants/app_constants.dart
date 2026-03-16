@@ -44,6 +44,7 @@ abstract class StorageKeys {
   static const String skipBackwardSecs = 'skip_backward_secs';
   static const String scanFolderPath = 'scan_folder_path';
   static const String listeningAnalytics = 'listening_analytics_v1';
+  static const String bookmarks = 'bookmarks_v1';
 }
 
 // ─── App defaults ─────────────────────────────────────────────────────────────
