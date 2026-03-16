@@ -9,6 +9,7 @@ import 'package:avdibook/core/utils/duration_formatter.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
 import 'package:avdibook/shared/providers/app_bootstrap_provider.dart';
+import 'package:avdibook/shared/providers/character_notes_provider.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/listening_analytics_provider.dart';
 
@@ -28,6 +29,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final tt = Theme.of(context).textTheme;
     final library = ref.watch(libraryProvider);
     final analytics = ref.watch(listeningAnalyticsProvider);
+    final charactersByBook = ref.watch(characterNotesProvider);
     final analyticsByBook = analytics.byBook;
 
     final sorted = [...library]
@@ -170,8 +172,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           book: book,
                           listened: listened,
                           status: _resolveStatus(book, listened),
+                          characterCount:
+                              charactersByBook[book.id]?.length ?? 0,
                           onOpen: () =>
                               context.push(AppRoutes.playerPath(book.id)),
+                          onManageCharacters: () =>
+                              _showCharactersSheet(context, ref, book),
                           onRemove: () => _removeBook(context, ref, book),
                         );
                       },
@@ -182,6 +188,214 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showCharactersSheet(
+    BuildContext context,
+    WidgetRef ref,
+    Audiobook book,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Consumer(
+          builder: (context, modalRef, _) {
+            final items = modalRef.watch(bookCharactersProvider(book.id));
+            final tt = Theme.of(context).textTheme;
+            final cs = Theme.of(context).colorScheme;
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                10,
+                16,
+                16 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Characters',
+                          style: tt.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: () => _showCharacterEditor(
+                          context: ctx,
+                          ref: modalRef,
+                          bookId: book.id,
+                        ),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Track who is who in "${book.title}".',
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  if (items.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 22),
+                      child: Text(
+                        'No characters yet. Add the first one.',
+                        style: tt.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Material(
+                            color: cs.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(16),
+                            child: ListTile(
+                              title: Text(item.name),
+                              subtitle: Text(
+                                [if (item.role != null) item.role!, if (item.note != null) item.note!]
+                                    .join(' • '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _showCharacterEditor(
+                                      context: ctx,
+                                      ref: modalRef,
+                                      bookId: book.id,
+                                      existing: item,
+                                    );
+                                  }
+                                  if (value == 'delete') {
+                                    modalRef
+                                        .read(characterNotesProvider.notifier)
+                                        .remove(bookId: book.id, id: item.id);
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Edit'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showCharacterEditor({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String bookId,
+    BookCharacter? existing,
+  }) async {
+    final nameCtl = TextEditingController(text: existing?.name ?? '');
+    final roleCtl = TextEditingController(text: existing?.role ?? '');
+    final noteCtl = TextEditingController(text: existing?.note ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(existing == null ? 'Add character' : 'Edit character'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: roleCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Role (optional)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: noteCtl,
+                  decoration: const InputDecoration(
+                    labelText: 'Note (optional)',
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (saved == true) {
+      final name = nameCtl.text.trim();
+      if (name.isNotEmpty) {
+        final notifier = ref.read(characterNotesProvider.notifier);
+        if (existing == null) {
+          await notifier.add(
+            bookId: bookId,
+            name: name,
+            role: roleCtl.text,
+            note: noteCtl.text,
+          );
+        } else {
+          await notifier.update(
+            bookId: bookId,
+            id: existing.id,
+            name: name,
+            role: roleCtl.text,
+            note: noteCtl.text,
+          );
+        }
+      }
+    }
+
+    nameCtl.dispose();
+    roleCtl.dispose();
+    noteCtl.dispose();
   }
 
   BookStatus _resolveStatus(Audiobook book, Duration listened) {
@@ -217,14 +431,18 @@ class _LibraryBookTile extends StatelessWidget {
     required this.book,
     required this.listened,
     required this.status,
+    required this.characterCount,
     required this.onOpen,
+    required this.onManageCharacters,
     required this.onRemove,
   });
 
   final Audiobook book;
   final Duration listened;
   final BookStatus status;
+  final int characterCount;
   final VoidCallback onOpen;
+  final VoidCallback onManageCharacters;
   final VoidCallback onRemove;
 
   @override
@@ -287,6 +505,11 @@ class _LibraryBookTile extends StatelessWidget {
                             label:
                                 'Listened ${DurationFormatter.formatHuman(listened)}',
                           ),
+                          if (characterCount > 0)
+                            _MetaPill(
+                              icon: Icons.groups_rounded,
+                              label: '$characterCount characters',
+                            ),
                         ],
                       ),
                     ],
@@ -295,12 +518,17 @@ class _LibraryBookTile extends StatelessWidget {
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'open') onOpen();
+                    if (value == 'characters') onManageCharacters();
                     if (value == 'remove') onRemove();
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
                       value: 'open',
                       child: Text('Open player'),
+                    ),
+                    PopupMenuItem(
+                      value: 'characters',
+                      child: Text('Manage characters'),
                     ),
                     PopupMenuItem(
                       value: 'remove',
