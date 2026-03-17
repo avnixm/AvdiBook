@@ -180,72 +180,88 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _StatusCounterChip(
-                            icon: Icons.library_books_rounded,
-                            label: 'All',
-                            count: sorted.length,
-                            active: _viewFilter == LibraryViewFilter.all,
-                            onTap: () =>
-                                setState(() => _viewFilter = LibraryViewFilter.all),
-                          ),
-                          const SizedBox(width: 8),
-                          _StatusCounterChip(
-                            icon: Icons.play_circle_outline_rounded,
-                            label: 'Continue',
-                            count: continueCount,
-                            active: _viewFilter == LibraryViewFilter.continueListening,
-                            onTap: () => setState(
-                              () =>
-                                  _viewFilter = LibraryViewFilter.continueListening,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _StatusCounterChip(
-                            icon: Icons.history_rounded,
-                            label: 'Recent',
-                            count: recentCount,
-                            active: _viewFilter == LibraryViewFilter.recentPlayed,
-                            onTap: () => setState(
-                              () => _viewFilter = LibraryViewFilter.recentPlayed,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _StatusCounterChip(
-                            icon: Icons.star_rounded,
-                            label: 'Favorites',
-                            count: favoritesCount,
-                            active: _viewFilter == LibraryViewFilter.favorites,
-                            onTap: () =>
-                                setState(() => _viewFilter = LibraryViewFilter.favorites),
-                          ),
-                          const SizedBox(width: 8),
-                          _StatusCounterChip(
-                            icon: Icons.download_done_rounded,
-                            label: 'Downloaded',
-                            count: downloadedCount,
-                            active: _viewFilter == LibraryViewFilter.downloaded,
-                            onTap: () =>
-                                setState(() => _viewFilter = LibraryViewFilter.downloaded),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
                     Row(
                       children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: cs.secondaryContainer,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
+                            style: tt.labelMedium?.copyWith(
+                              color: cs.onSecondaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_viewFilter != LibraryViewFilter.all || _statusFilter != null)
+                          TextButton.icon(
+                            onPressed: () => setState(() {
+                              _viewFilter = LibraryViewFilter.all;
+                              _statusFilter = null;
+                            }),
+                            icon: const Icon(Icons.filter_alt_off_rounded),
+                            label: const Text('Clear'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        PopupMenuButton<LibraryViewFilter>(
+                          initialValue: _viewFilter,
+                          onSelected: (value) => setState(() => _viewFilter = value),
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: LibraryViewFilter.all,
+                              child: Text('All (${
+                                sorted.length
+                              })'),
+                            ),
+                            PopupMenuItem(
+                              value: LibraryViewFilter.continueListening,
+                              child: Text('Continue ($continueCount)'),
+                            ),
+                            PopupMenuItem(
+                              value: LibraryViewFilter.recentPlayed,
+                              child: Text('Recent ($recentCount)'),
+                            ),
+                            PopupMenuItem(
+                              value: LibraryViewFilter.favorites,
+                              child: Text('Favorites ($favoritesCount)'),
+                            ),
+                            PopupMenuItem(
+                              value: LibraryViewFilter.downloaded,
+                              child: Text('Downloaded ($downloadedCount)'),
+                            ),
+                          ],
+                          child: Chip(
+                            avatar: const Icon(Icons.filter_list_rounded, size: 18),
+                            label: Text(switch (_viewFilter) {
+                              LibraryViewFilter.all => 'View: All',
+                              LibraryViewFilter.continueListening =>
+                                'View: Continue',
+                              LibraryViewFilter.recentPlayed => 'View: Recent',
+                              LibraryViewFilter.favorites => 'View: Favorites',
+                              LibraryViewFilter.downloaded => 'View: Downloaded',
+                            }),
+                          ),
+                        ),
                         PopupMenuButton<BookStatus?>(
                           initialValue: _statusFilter,
-                          onSelected: (value) =>
-                              setState(() => _statusFilter = value),
+                          onSelected: (value) => setState(() => _statusFilter = value),
                           itemBuilder: (context) => [
-                            const PopupMenuItem<BookStatus?>(
+                            PopupMenuItem<BookStatus?>(
                               value: null,
-                              child: Text('All statuses'),
+                              child: Text('All statuses (${sorted.length})'),
                             ),
                             PopupMenuItem<BookStatus?>(
                               value: BookStatus.newBook,
@@ -268,28 +284,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           ],
                           child: Chip(
                             avatar: const Icon(Icons.tune_rounded, size: 18),
-                            label: Text(
-                              switch (_statusFilter) {
-                                null => 'Status: All',
-                                BookStatus.newBook => 'Status: New',
-                                BookStatus.started => 'Status: Started',
-                                BookStatus.finished => 'Status: Finished',
-                              },
-                            ),
+                            label: Text(switch (_statusFilter) {
+                              null => 'Status: All',
+                              BookStatus.newBook => 'Status: New',
+                              BookStatus.started => 'Status: Started',
+                              BookStatus.finished => 'Status: Finished',
+                            }),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Sort by',
-                          style: tt.labelMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         PopupMenuButton<LibrarySortMode>(
                           initialValue: _sortMode,
-                          onSelected: (value) =>
-                              setState(() => _sortMode = value),
+                          onSelected: (value) => setState(() => _sortMode = value),
                           itemBuilder: (context) => const [
                             PopupMenuItem(
                               value: LibrarySortMode.recentAdded,
@@ -313,12 +318,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             ),
                           ],
                           child: Chip(
+                            avatar: const Icon(Icons.swap_vert_rounded, size: 18),
                             label: Text(switch (_sortMode) {
-                              LibrarySortMode.recentAdded => 'Recently added',
-                              LibrarySortMode.recentPlayed => 'Recently played',
-                              LibrarySortMode.title => 'Title',
-                              LibrarySortMode.author => 'Author',
-                              LibrarySortMode.progress => 'Progress',
+                              LibrarySortMode.recentAdded => 'Sort: Added',
+                              LibrarySortMode.recentPlayed => 'Sort: Played',
+                              LibrarySortMode.title => 'Sort: Title',
+                              LibrarySortMode.author => 'Sort: Author',
+                              LibrarySortMode.progress => 'Sort: Progress',
                             }),
                           ),
                         ),
@@ -522,30 +528,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showCharacterEditor(
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton.filledTonal(
+                                    tooltip: 'Edit character',
+                                    onPressed: () => _showCharacterEditor(
                                       context: ctx,
                                       ref: modalRef,
                                       bookId: book.id,
                                       existing: item,
-                                    );
-                                  }
-                                  if (value == 'delete') {
-                                    modalRef
-                                        .read(characterNotesProvider.notifier)
-                                        .remove(bookId: book.id, id: item.id);
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text('Edit'),
+                                    ),
+                                    icon: const Icon(Icons.edit_outlined),
                                   ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('Delete'),
+                                  const SizedBox(width: 6),
+                                  IconButton.filledTonal(
+                                    tooltip: 'Delete character',
+                                    onPressed: () {
+                                      modalRef
+                                          .read(characterNotesProvider.notifier)
+                                          .remove(bookId: book.id, id: item.id);
+                                    },
+                                    icon: const Icon(Icons.delete_outline_rounded),
                                   ),
                                 ],
                               ),
@@ -716,6 +720,63 @@ class _LibraryBookTile extends StatelessWidget {
   final VoidCallback onToggleFavorite;
   final VoidCallback onRemove;
 
+  Future<void> _showActions(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.play_arrow_rounded),
+                title: const Text('Open player'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onOpen();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.groups_rounded),
+                title: const Text('Manage characters'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onManageCharacters();
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  book.isFavorite
+                      ? Icons.star_border_rounded
+                      : Icons.star_rounded,
+                ),
+                title: Text(
+                  book.isFavorite
+                      ? 'Remove from favorites'
+                      : 'Add to favorites',
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onToggleFavorite();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded),
+                title: const Text('Remove from library'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  onRemove();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -782,7 +843,7 @@ class _LibraryBookTile extends StatelessWidget {
                               label: '$characterCount characters',
                             ),
                           if (book.isFavorite)
-                            _MetaPill(
+                            const _MetaPill(
                               icon: Icons.star_rounded,
                               label: 'Favorite',
                             ),
@@ -791,32 +852,9 @@ class _LibraryBookTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'open') onOpen();
-                    if (value == 'characters') onManageCharacters();
-                    if (value == 'favorite') onToggleFavorite();
-                    if (value == 'remove') onRemove();
-                  },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(value: 'open', child: Text('Open player')),
-                    PopupMenuItem(
-                      value: 'characters',
-                      child: Text('Manage characters'),
-                    ),
-                    PopupMenuItem(
-                      value: 'favorite',
-                      child: Text(
-                        book.isFavorite
-                            ? 'Remove from favorites'
-                            : 'Add to favorites',
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'remove',
-                      child: Text('Remove from library'),
-                    ),
-                  ],
+                IconButton.filledTonal(
+                  onPressed: () => _showActions(context),
+                  icon: const Icon(Icons.more_horiz_rounded),
                 ),
               ],
             ),
@@ -953,38 +991,6 @@ class _LibraryDetailPane extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _StatusCounterChip extends StatelessWidget {
-  const _StatusCounterChip({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.active,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final int count;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return ExpressiveBounce(
-      child: FilterChip(
-        selected: active,
-        onSelected: (_) => onTap(),
-        avatar: Icon(icon, size: 16),
-        label: Text('$label ($count)'),
-        selectedColor: cs.secondaryContainer,
-        checkmarkColor: cs.onSecondaryContainer,
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,17 +19,29 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+  with SingleTickerProviderStateMixin {
   static const _skipOptions = [5, 10, 15, 20, 30, 45, 60];
   static const _smartRewindOptions = [0, 3, 5, 7, 10, 15, 20];
   static const _themeLabels = ['System', 'Light', 'Dark'];
   final AudioFxService _audioFxService = AudioFxService();
   late final Future<AudioFxCapabilities> _capabilitiesFuture;
+  late final AnimationController _entranceController;
 
   @override
   void initState() {
     super.initState();
     _capabilitiesFuture = _audioFxService.getCapabilities();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickOption<T>({
@@ -193,20 +207,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final appearanceSection = _SettingsSection(
       title: 'Appearance',
       children: [
-        _SettingsTile(
-          icon: Icons.dark_mode_rounded,
-          label: 'Theme',
-          value: _themeLabels[themeMode.clamp(0, 2)],
-          onTap: isBusy
-              ? null
-              : () => _pickOption<int>(
-                  title: 'Theme',
-                  options: const [0, 1, 2],
-                  current: themeMode,
-                  label: (v) => _themeLabels[v],
-                  onSelect: (v) =>
-                      ref.read(themeModeProvider.notifier).setMode(v),
-                ),
+        ListTile(
+          leading: const Icon(Icons.dark_mode_rounded),
+          title: const Text('Theme'),
+          subtitle: Text(_themeLabels[themeMode.clamp(0, 2)]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment<int>(value: 0, label: Text('System')),
+              ButtonSegment<int>(value: 1, label: Text('Light')),
+              ButtonSegment<int>(value: 2, label: Text('Dark')),
+            ],
+            selected: {themeMode.clamp(0, 2)},
+            onSelectionChanged: isBusy
+                ? null
+                : (selection) {
+                    final mode = selection.first;
+                    ref.read(themeModeProvider.notifier).setMode(mode);
+                  },
+            showSelectedIcon: false,
+          ),
         ),
         SwitchListTile.adaptive(
           value: reducedMotion,
@@ -495,31 +517,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _reveal(
+                    index: 0,
+                    reduceMotion: reducedMotion,
+                    child: _SettingsComponentBar(
+                      isBusy: isBusy,
+                      hasSavedFolder: savedFolder != null,
+                      onRescan: () async {
+                        if (isBusy) return;
+                        final controller = ref.read(setupControllerProvider.notifier);
+                        await controller.rescanLibrary();
+                      },
+                      onAddFolder: () {
+                        if (isBusy) return;
+                        ref.read(setupControllerProvider.notifier).importDirectory();
+                      },
+                      onOpenAbout: () => context.push(AppRoutes.about),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   if (useSplitLayout)
                     _SettingsSplitColumns(
                       leftChildren: [
-                        playbackSection,
-                        audioEffectsSection,
-                        librarySection,
+                        _reveal(
+                          index: 0,
+                          reduceMotion: reducedMotion,
+                          child: playbackSection,
+                        ),
+                        _reveal(
+                          index: 1,
+                          reduceMotion: reducedMotion,
+                          child: audioEffectsSection,
+                        ),
+                        _reveal(
+                          index: 2,
+                          reduceMotion: reducedMotion,
+                          child: librarySection,
+                        ),
                       ],
                       rightChildren: [
-                        appearanceSection,
-                        castSection,
-                        aboutSection,
+                        _reveal(
+                          index: 1,
+                          reduceMotion: reducedMotion,
+                          child: appearanceSection,
+                        ),
+                        _reveal(
+                          index: 2,
+                          reduceMotion: reducedMotion,
+                          child: castSection,
+                        ),
+                        _reveal(
+                          index: 3,
+                          reduceMotion: reducedMotion,
+                          child: aboutSection,
+                        ),
                       ],
                     )
                   else ...[
-                    playbackSection,
+                    _reveal(
+                      index: 0,
+                      reduceMotion: reducedMotion,
+                      child: playbackSection,
+                    ),
                     const SizedBox(height: 16),
-                    appearanceSection,
+                    _reveal(
+                      index: 1,
+                      reduceMotion: reducedMotion,
+                      child: appearanceSection,
+                    ),
                     const SizedBox(height: 16),
-                    audioEffectsSection,
+                    _reveal(
+                      index: 2,
+                      reduceMotion: reducedMotion,
+                      child: audioEffectsSection,
+                    ),
                     const SizedBox(height: 16),
-                    castSection,
+                    _reveal(
+                      index: 3,
+                      reduceMotion: reducedMotion,
+                      child: castSection,
+                    ),
                     const SizedBox(height: 16),
-                    librarySection,
+                    _reveal(
+                      index: 4,
+                      reduceMotion: reducedMotion,
+                      child: librarySection,
+                    ),
                     const SizedBox(height: 16),
-                    aboutSection,
+                    _reveal(
+                      index: 5,
+                      reduceMotion: reducedMotion,
+                      child: aboutSection,
+                    ),
                   ],
                   if (setupState.errorMessage != null) ...[
                     const SizedBox(height: 12),
@@ -543,6 +632,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Animation<double> _staggered(int index) {
+    final start = math.min(index * 0.1, 0.8);
+    final end = math.min(start + 0.28, 1.0);
+    return CurvedAnimation(
+      parent: _entranceController,
+      curve: Interval(start, end, curve: Curves.easeOutCubic),
+    );
+  }
+
+  Widget _reveal({
+    required int index,
+    required bool reduceMotion,
+    required Widget child,
+  }) {
+    if (reduceMotion) return child;
+    final animation = _staggered(index);
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.03),
+          end: Offset.zero,
+        ).animate(animation),
+        child: child,
       ),
     );
   }
@@ -597,6 +714,23 @@ class _SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final disableAnimations = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+    final container = AnimatedContainer(
+      duration: disableAnimations
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(children: children),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -610,16 +744,55 @@ class _SettingsSection extends StatelessWidget {
             ),
           ),
         ),
-        Card(
-          elevation: 0,
-          color: cs.surfaceContainerLow,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(children: children),
-        ),
+        container,
       ],
+    );
+  }
+}
+
+class _SettingsComponentBar extends StatelessWidget {
+  const _SettingsComponentBar({
+    required this.isBusy,
+    required this.hasSavedFolder,
+    required this.onRescan,
+    required this.onAddFolder,
+    required this.onOpenAbout,
+  });
+
+  final bool isBusy;
+  final bool hasSavedFolder;
+  final Future<void> Function() onRescan;
+  final VoidCallback onAddFolder;
+  final VoidCallback onOpenAbout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Rescan'),
+              onPressed: isBusy || !hasSavedFolder ? null : () => onRescan(),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.folder_open_rounded, size: 16),
+              label: const Text('Add folder'),
+              onPressed: isBusy ? null : onAddFolder,
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.info_outline_rounded, size: 16),
+              label: const Text('About'),
+              onPressed: onOpenAbout,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

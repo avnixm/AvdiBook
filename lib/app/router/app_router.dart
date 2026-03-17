@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
@@ -7,6 +8,7 @@ import 'package:avdibook/features/home/presentation/screens/home_screen.dart';
 import 'package:avdibook/features/library/presentation/screens/library_screen.dart';
 import 'package:avdibook/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:avdibook/features/player/presentation/providers/player_provider.dart';
+import 'package:avdibook/features/player/presentation/providers/cover_palette_provider.dart';
 import 'package:avdibook/features/player/presentation/screens/bookmarks_screen.dart';
 import 'package:avdibook/features/player/presentation/screens/chapter_list_screen.dart';
 import 'package:avdibook/features/search/presentation/screens/search_screen.dart';
@@ -17,6 +19,7 @@ import 'package:avdibook/features/splash/presentation/screens/splash_screen.dart
 import 'package:avdibook/features/player/presentation/screens/now_playing_screen.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -60,8 +63,8 @@ class AppRouter {
           return CustomTransitionPage<void>(
             key: state.pageKey,
             child: NowPlayingScreen(bookId: bookId),
-            transitionDuration: const Duration(milliseconds: 250),
-            reverseTransitionDuration: const Duration(milliseconds: 220),
+            transitionDuration: const Duration(milliseconds: 190),
+            reverseTransitionDuration: const Duration(milliseconds: 170),
             transitionsBuilder: (context, animation, secondary, child) {
               final curve = CurvedAnimation(
                 parent: animation,
@@ -69,10 +72,10 @@ class AppRouter {
                 reverseCurve: Curves.easeInCubic,
               );
               return FadeTransition(
-                opacity: Tween<double>(begin: 0.75, end: 1).animate(curve),
+                opacity: Tween<double>(begin: 0.92, end: 1).animate(curve),
                 child: SlideTransition(
                   position: Tween<Offset>(
-                    begin: const Offset(0, 0.92),
+                    begin: const Offset(0, 0.10),
                     end: Offset.zero,
                   ).animate(curve),
                   child: child,
@@ -134,14 +137,93 @@ class AppRouter {
 
 // ─── Main shell with bottom navigation ──────────────────────────────────────
 
-class _MainShell extends ConsumerWidget {
+class _MainShell extends ConsumerStatefulWidget {
   const _MainShell({required this.child, required this.currentPath});
 
   final Widget child;
   final String currentPath;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<_MainShell> {
+  final List<String> _tabHistory = [];
+  bool _suppressNextHistoryPush = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = _toMainTabRoute(widget.currentPath);
+    if (initial != null) {
+      _tabHistory.add(initial);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _MainShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final previous = _toMainTabRoute(oldWidget.currentPath);
+    final next = _toMainTabRoute(widget.currentPath);
+
+    if (next == null || previous == next) return;
+
+    if (_suppressNextHistoryPush) {
+      _suppressNextHistoryPush = false;
+      return;
+    }
+
+    _tabHistory.add(next);
+  }
+
+  String? _toMainTabRoute(String path) {
+    for (final tab in _mainTabs) {
+      if (path.startsWith(tab.route)) return tab.route;
+    }
+    return null;
+  }
+
+  Future<bool> _handleBackPressed(BuildContext context) async {
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop();
+      return false;
+    }
+
+    final current = _toMainTabRoute(widget.currentPath);
+    if (current == null) return true;
+
+    while (_tabHistory.isNotEmpty && _tabHistory.last == current) {
+      _tabHistory.removeLast();
+    }
+
+    if (_tabHistory.isEmpty) {
+      if (current != AppRoutes.home) {
+        _suppressNextHistoryPush = true;
+        context.go(AppRoutes.home);
+        return false;
+      }
+      return true;
+    }
+
+    final previous = _tabHistory.last;
+    _suppressNextHistoryPush = true;
+    context.go(previous);
+    return false;
+  }
+
+  Future<void> _onPopInvoked(BuildContext context, bool didPop) async {
+    if (didPop) return;
+    final shouldExit = await _handleBackPressed(context);
+    if (shouldExit) {
+      await SystemNavigator.pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentPath = widget.currentPath;
+    final child = widget.child;
     final isPlayerRoute = currentPath.startsWith('/player/');
     final width = MediaQuery.sizeOf(context).width;
     final useRail = width >= AppSpacing.compactMaxWidth;
@@ -152,47 +234,59 @@ class _MainShell extends ConsumerWidget {
     }
 
     if (useRail) {
-      return Scaffold(
-        body: SafeArea(
-          top: false,
-          child: Row(
-            children: [
-              _AvdiNavigationRail(
-                currentPath: currentPath,
-                extended: useExtendedRail,
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Expanded(child: child),
-                    const SafeArea(
-                      top: false,
-                      left: false,
-                      right: false,
-                      child: _MiniNowPlayingBar(hidden: false),
-                    ),
-                  ],
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          unawaited(_onPopInvoked(context, didPop));
+        },
+        child: Scaffold(
+          body: SafeArea(
+            top: false,
+            child: Row(
+              children: [
+                _AvdiNavigationRail(
+                  currentPath: currentPath,
+                  extended: useExtendedRail,
                 ),
-              ),
-            ],
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(child: child),
+                      const SafeArea(
+                        top: false,
+                        left: false,
+                        right: false,
+                        child: _MiniNowPlayingBar(hidden: false),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    return Scaffold(
-      body: Column(
-        children: [
-          Expanded(child: child),
-          const SafeArea(
-            top: false,
-            left: false,
-            right: false,
-            child: _MiniNowPlayingBar(hidden: false),
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        unawaited(_onPopInvoked(context, didPop));
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            Expanded(child: child),
+            const SafeArea(
+              top: false,
+              left: false,
+              right: false,
+              child: _MiniNowPlayingBar(hidden: false),
+            ),
+          ],
+        ),
+        bottomNavigationBar: _AvdiBottomNav(currentPath: currentPath),
       ),
-      bottomNavigationBar: _AvdiBottomNav(currentPath: currentPath),
     );
   }
 }
@@ -322,7 +416,17 @@ class _MiniNowPlayingBar extends ConsumerWidget {
           child: ExpressiveBounce(
             child: InkWell(
               borderRadius: BorderRadius.circular(18),
-              onTap: () => context.push(AppRoutes.playerPath(currentBook.id)),
+              onTap: () {
+                final coverPath = currentBook.coverPath;
+                if (coverPath != null) {
+                  unawaited(ref.read(coverPaletteProvider(currentBook.id).future));
+                  final imageFile = File(coverPath);
+                  if (imageFile.existsSync()) {
+                    unawaited(precacheImage(FileImage(imageFile), context));
+                  }
+                }
+                context.push(AppRoutes.playerPath(currentBook.id));
+              },
               child: SizedBox(
                 height: 72,
                 child: Row(

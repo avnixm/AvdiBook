@@ -13,6 +13,7 @@ import 'package:avdibook/features/player/presentation/providers/sleep_timer_prov
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook_author.dart';
 import 'package:avdibook/features/setup/presentation/providers/setup_controller.dart';
+import 'package:avdibook/shared/providers/app_state_provider.dart';
 import 'package:avdibook/shared/providers/bookmarks_provider.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/storage_providers.dart';
@@ -44,7 +45,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     if (matching.isNotEmpty) {
       final book = matching.first;
       ref.read(playerProvider.notifier).load(book);
-      unawaited(_backfillMetadataIfNeeded(book));
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 900), () async {
+          if (!mounted) return;
+          await _backfillMetadataIfNeeded(book);
+        }),
+      );
     }
   }
 
@@ -126,6 +132,38 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       return;
     }
     notifier.start(Duration(minutes: selected));
+  }
+
+  Future<void> _showSpeedSheet(double currentSpeed) async {
+    final selected = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('Playback speed'),
+              subtitle: Text('Choose your listening speed.'),
+            ),
+            for (final speed in AppDefaults.speedOptions)
+              ListTile(
+                leading: Icon(
+                  speed == currentSpeed
+                      ? Icons.check_circle_rounded
+                      : Icons.speed_rounded,
+                ),
+                title: Text('${speed % 1 == 0 ? speed.toInt() : speed}x'),
+                onTap: () => Navigator.of(ctx).pop(speed),
+              ),
+          ],
+        );
+      },
+    );
+
+    if (selected != null) {
+      ref.read(playerProvider.notifier).setSpeed(selected);
+    }
   }
 
   String _sleepTimerLabel(SleepTimerState timerState) {
@@ -344,6 +382,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     final text = Theme.of(context).textTheme;
     final library = ref.watch(libraryProvider);
     final playerState = ref.watch(playerProvider);
+    final skipForwardSecs = ref.watch(skipForwardSecsProvider);
+    final skipBackwardSecs = ref.watch(skipBackwardSecsProvider);
     final paletteAsync = ref.watch(coverPaletteProvider(widget.bookId));
     final paletteColor = paletteAsync.value;
     final sleepTimer = ref.watch(sleepTimerProvider);
@@ -438,11 +478,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
 
-                  Row(
-                    children: [
-                      Expanded(
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: FractionallySizedBox(
+                        widthFactor: 0.9,
                         child: AspectRatio(
                           aspectRatio: 1,
                           child: ClipRRect(
@@ -457,22 +499,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: SizedBox(
-                          width: 40,
-                          height: 160,
-                          child: _CoverFallback(
-                            accentColor: accentColor,
-                            scheme: scheme,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
 
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 16),
 
                   Row(
                     children: [
@@ -559,49 +589,59 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
                   const SizedBox(height: 22),
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _SideTransportButton(
-                        icon: Icons.skip_previous_rounded,
-                        scheme: scheme,
-                        accentColor: accentColor,
-                        semanticsLabel: 'Previous chapter',
-                        onTap: () =>
-                            ref.read(playerProvider.notifier).previousChapter(),
-                      ),
-                      const SizedBox(width: 16),
-                      _PlayPauseButton(
-                        isPlaying: playerState.isPlaying,
-                        isLoading: playerState.isLoading,
-                        accentColor: accentColor,
-                        onAccent: onAccent,
-                        semanticsLabel: playerState.isPlaying
-                            ? 'Pause'
-                            : 'Play',
-                        onTap: () =>
-                            ref.read(playerProvider.notifier).togglePlay(),
-                      ),
-                      const SizedBox(width: 16),
-                      _SideTransportButton(
-                        icon: Icons.skip_next_rounded,
-                        scheme: scheme,
-                        accentColor: accentColor,
-                        semanticsLabel: 'Next chapter',
-                        onTap: () =>
-                            ref.read(playerProvider.notifier).nextChapter(),
-                      ),
-                    ],
+                  SizedBox(
+                    height: 64,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SideTransportButton(
+                            icon: Icons.fast_rewind_rounded,
+                            label: '${skipBackwardSecs}s',
+                            scheme: scheme,
+                            accentColor: accentColor,
+                            semanticsLabel: 'Rewind $skipBackwardSecs seconds',
+                            onTap: () => ref
+                                .read(playerProvider.notifier)
+                                .skipBackward(skipBackwardSecs),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _PlayPauseButton(
+                            isPlaying: playerState.isPlaying,
+                            isLoading: playerState.isLoading,
+                            accentColor: accentColor,
+                            onAccent: onAccent,
+                            semanticsLabel:
+                                playerState.isPlaying ? 'Pause' : 'Play',
+                            onTap: () =>
+                                ref.read(playerProvider.notifier).togglePlay(),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _SideTransportButton(
+                            icon: Icons.fast_forward_rounded,
+                            label: '${skipForwardSecs}s',
+                            scheme: scheme,
+                            accentColor: accentColor,
+                            semanticsLabel: 'Seek forward $skipForwardSecs seconds',
+                            onTap: () =>
+                                ref.read(playerProvider.notifier).skipForward(skipForwardSecs),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 16),
 
                   Container(
+                    height: 54,
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(18),
                     ),
                     child: Row(
                       children: [
@@ -650,10 +690,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
                   const SizedBox(height: 10),
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      TextButton.icon(
+                      FilledButton.tonalIcon(
                         onPressed: () => _showSleepTimerSheet(sleepTimer),
                         icon: Icon(
                           sleepTimer.resumeArmed
@@ -662,51 +704,14 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                         ),
                         label: Text(_sleepTimerLabel(sleepTimer)),
                       ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final selected = await showDialog<double>(
-                            context: context,
-                            builder: (ctx) => SimpleDialog(
-                              title: const Text('Playback Speed'),
-                              children: AppDefaults.speedOptions.map((v) {
-                                final isSelected = v == playerState.speed;
-                                return SimpleDialogOption(
-                                  onPressed: () => Navigator.of(ctx).pop(v),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          '${v % 1 == 0 ? v.toInt() : v}×',
-                                        ),
-                                      ),
-                                      if (isSelected)
-                                        Icon(
-                                          Icons.check_rounded,
-                                          size: 18,
-                                          color: Theme.of(
-                                            ctx,
-                                          ).colorScheme.primary,
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          );
-                          if (selected != null) {
-                            ref
-                                .read(playerProvider.notifier)
-                                .setSpeed(selected);
-                          }
-                        },
+                      FilledButton.tonalIcon(
+                        onPressed: () => _showSpeedSheet(playerState.speed),
                         icon: const Icon(Icons.speed_rounded),
                         label: Text(
                           '${playerState.speed % 1 == 0 ? playerState.speed.toInt() : playerState.speed}×',
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
+                      FilledButton.tonalIcon(
                         onPressed: book == null
                             ? null
                             : () => _addQuickClip(
@@ -958,6 +963,7 @@ class _CoverArea extends StatelessWidget {
           Image.file(
             File(imagePath),
             fit: BoxFit.cover,
+            cacheWidth: 900,
             errorBuilder: (_, __, ___) =>
                 _CoverFallback(accentColor: accentColor, scheme: scheme),
           )
@@ -1084,6 +1090,7 @@ class _RoundedIconButton extends StatelessWidget {
 class _SideTransportButton extends StatelessWidget {
   const _SideTransportButton({
     required this.icon,
+    required this.label,
     required this.scheme,
     required this.accentColor,
     required this.onTap,
@@ -1091,6 +1098,7 @@ class _SideTransportButton extends StatelessWidget {
   });
 
   final IconData icon;
+  final String label;
   final ColorScheme scheme;
   final Color accentColor;
   final VoidCallback onTap;
@@ -1118,18 +1126,32 @@ class _SideTransportButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           child: FilledButton.tonal(
-          onPressed: onTap,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(64, 56),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(double.infinity, 64),
+              maximumSize: const Size(double.infinity, 64),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 20, color: foreground),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [Icon(icon, size: 20, color: foreground)],
-          ),
-        ),
         ),
       ),
     );
@@ -1157,6 +1179,7 @@ class _PlayPauseButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = Color.lerp(accentColor, Colors.black, 0.08) ?? accentColor;
     return Semantics(
       button: true,
       label: semanticsLabel,
@@ -1167,16 +1190,23 @@ class _PlayPauseButton extends StatelessWidget {
           curve: Curves.easeOutCubic,
           builder: (context, animatedColor, child) {
             final effective = animatedColor ?? accentColor;
-            return FloatingActionButton.large(
+            return FilledButton(
               onPressed: onTap,
-              backgroundColor: effective,
-              foregroundColor: onAccent,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(double.infinity, 64),
+                maximumSize: const Size(double.infinity, 64),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                backgroundColor: Color.lerp(surface, effective, 0.85),
+                foregroundColor: onAccent,
+              ),
               child: isLoading
                   ? SizedBox(
-                      width: 24,
-                      height: 24,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
+                        strokeWidth: 2.3,
                         valueColor: AlwaysStoppedAnimation(onAccent),
                       ),
                     )
@@ -1184,8 +1214,7 @@ class _PlayPauseButton extends StatelessWidget {
                       duration: const Duration(milliseconds: 220),
                       switchInCurve: Curves.easeOutBack,
                       switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) =>
-                          FadeTransition(
+                      transitionBuilder: (child, animation) => FadeTransition(
                         opacity: animation,
                         child: ScaleTransition(scale: animation, child: child),
                       ),
@@ -1194,7 +1223,7 @@ class _PlayPauseButton extends StatelessWidget {
                             ? Icons.pause_rounded
                             : Icons.play_arrow_rounded,
                         key: ValueKey<bool>(isPlaying),
-                        size: 34,
+                        size: 30,
                       ),
                     ),
             );
@@ -1233,7 +1262,11 @@ class _MiniActionButton extends StatelessWidget {
               ? accentColor.withValues(alpha: 0.16)
               : scheme.surfaceContainer,
           foregroundColor: active ? accentColor : scheme.onSurfaceVariant,
-          minimumSize: const Size(44, 44),
+          minimumSize: const Size(double.infinity, 46),
+          maximumSize: const Size(double.infinity, 46),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
         icon: Icon(icon, size: 20),
       ),

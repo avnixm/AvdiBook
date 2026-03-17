@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import 'package:avdibook/app/theme/app_spacing.dart';
 import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/utils/duration_formatter.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
+import 'package:avdibook/features/player/presentation/providers/cover_palette_provider.dart';
 import 'package:avdibook/features/setup/presentation/providers/setup_controller.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
 import 'package:avdibook/shared/providers/listening_analytics_provider.dart';
@@ -71,58 +73,103 @@ class HomeScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (library.isEmpty)
-                    _EmptyState(
-                      isBusy: isBusy,
-                      errorMessage: setupState.errorMessage,
-                      onImportFiles: importFiles,
-                      onImportDirectory: importDirectory,
+                    _ExpressiveReveal(
+                      index: 0,
+                      child: _EmptyState(
+                        isBusy: isBusy,
+                        errorMessage: setupState.errorMessage,
+                        onImportFiles: importFiles,
+                        onImportDirectory: importDirectory,
+                      ),
                     )
                   else ...[
                     const SizedBox(height: AppSpacing.md),
 
-                    const _SectionTitle(title: 'Continue listening'),
+                    const _ExpressiveReveal(
+                      index: 0,
+                      child: _SectionTitle(title: 'Continue listening'),
+                    ),
                     const SizedBox(height: AppSpacing.sm),
-                    if (continueListening.isNotEmpty)
-                      _ContinueListeningCard(
-                        book: continueListening.first,
-                        lastPlayedAt:
-                            analytics.byBook[continueListening.first.id]?.lastPlayedAt ??
-                            continueListening.first.lastPlayedAt,
-                        onTap: (book) =>
-                            context.push(AppRoutes.playerPath(book.id)),
-                      )
-                    else
-                      Card(
-                        margin: EdgeInsets.zero,
-                        child: ListTile(
-                          leading: const Icon(Icons.play_circle_outline_rounded),
-                          title: const Text('No recent listening yet'),
-                          subtitle: const Text('Start a book and it will appear here.'),
-                          onTap: () => context.go(AppRoutes.library),
-                        ),
+                    _ExpressiveReveal(
+                      index: 1,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        child: continueListening.isNotEmpty
+                            ? _ContinueListeningCard(
+                                key: ValueKey<String>(continueListening.first.id),
+                                book: continueListening.first,
+                                lastPlayedAt:
+                                    analytics.byBook[continueListening.first.id]?.lastPlayedAt ??
+                                    continueListening.first.lastPlayedAt,
+                                onTap: (book) {
+                                  final coverPath = book.coverPath;
+                                  if (coverPath != null) {
+                                    unawaited(ref.read(coverPaletteProvider(book.id).future));
+                                    final imageFile = File(coverPath);
+                                    if (imageFile.existsSync()) {
+                                      unawaited(precacheImage(FileImage(imageFile), context));
+                                    }
+                                  }
+                                  context.push(AppRoutes.playerPath(book.id));
+                                },
+                              )
+                            : Card(
+                                key: const ValueKey<String>('no-continue'),
+                                margin: EdgeInsets.zero,
+                                child: ListTile(
+                                  leading: const Icon(Icons.play_circle_outline_rounded),
+                                  title: const Text('No recent listening yet'),
+                                  subtitle: const Text('Start a book and it will appear here.'),
+                                  onTap: () => context.go(AppRoutes.library),
+                                ),
+                              ),
                       ),
+                    ),
 
                     const SizedBox(height: AppSpacing.xl),
-                    _ListeningAnalyticsCard(
-                      totalListening: analytics.totalListeningDuration,
-                      averageSession: analytics.averageSessionDuration,
-                      sessions: analytics.totalSessions,
+                    _ExpressiveReveal(
+                      index: 2,
+                      child: _ListeningAnalyticsCard(
+                        totalListening: analytics.totalListeningDuration,
+                        averageSession: analytics.averageSessionDuration,
+                        sessions: analytics.totalSessions,
+                      ),
                     ),
 
                     if (historyItems.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.xl),
-                      const _SectionTitle(title: 'Playback history'),
+                      const _ExpressiveReveal(
+                        index: 3,
+                        child: _SectionTitle(title: 'Playback history'),
+                      ),
                       const SizedBox(height: AppSpacing.sm),
-                      _PlaybackHistoryList(
-                        historyItems: historyItems,
-                        library: library,
-                        onTap: (book) =>
-                            context.push(AppRoutes.playerPath(book.id)),
+                      _ExpressiveReveal(
+                        index: 4,
+                        child: _PlaybackHistoryList(
+                          historyItems: historyItems,
+                          library: library,
+                          onTap: (book) {
+                            final coverPath = book.coverPath;
+                            if (coverPath != null) {
+                              unawaited(ref.read(coverPaletteProvider(book.id).future));
+                              final imageFile = File(coverPath);
+                              if (imageFile.existsSync()) {
+                                unawaited(precacheImage(FileImage(imageFile), context));
+                              }
+                            }
+                            context.push(AppRoutes.playerPath(book.id));
+                          },
+                        ),
                       ),
                     ],
 
                     const SizedBox(height: AppSpacing.xl),
-                    _LibraryStatusOverview(counts: statusCounts),
+                    _ExpressiveReveal(
+                      index: 5,
+                      child: _LibraryStatusOverview(counts: statusCounts),
+                    ),
                   ],
                   const SizedBox(height: AppSpacing.xxl),
                 ],
@@ -289,6 +336,7 @@ class _EmptyState extends StatelessWidget {
 
 class _ContinueListeningCard extends StatelessWidget {
   const _ContinueListeningCard({
+    super.key,
     required this.book,
     required this.lastPlayedAt,
     required this.onTap,
@@ -343,7 +391,13 @@ class _ContinueListeningCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    LinearProgressIndicator(value: book.progress.clamp(0, 1)),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(end: book.progress.clamp(0, 1)),
+                      duration: const Duration(milliseconds: 420),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, value, _) =>
+                          LinearProgressIndicator(value: value),
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       '$progress% complete · Last listened $lastPlayedText',
@@ -357,7 +411,16 @@ class _ContinueListeningCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.play_circle_fill_rounded),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0.94, end: 1),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOutBack,
+                builder: (context, scale, child) => Transform.scale(
+                  scale: scale,
+                  child: child,
+                ),
+                child: const Icon(Icons.play_circle_fill_rounded),
+              ),
             ],
           ),
         ),
@@ -385,39 +448,89 @@ class _PlaybackHistoryList extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return Column(
-      children: historyItems.take(6).map((event) {
+      children: historyItems.take(6).toList().asMap().entries.map((entry) {
+        final index = entry.key;
+        final event = entry.value;
         final book = library.firstWhere((b) => b.id == event.bookId);
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          color: scheme.surfaceContainerLow,
-          child: ListTile(
-            onTap: () => onTap(book),
-            leading: CircleAvatar(
-              backgroundColor: scheme.secondaryContainer,
-              foregroundColor: scheme.onSecondaryContainer,
-              child: Icon(
-                event.event == 'pause'
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
+        return _ExpressiveReveal(
+          index: 5 + index,
+          child: Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            color: scheme.surfaceContainerLow,
+            child: ListTile(
+              onTap: () => onTap(book),
+              leading: CircleAvatar(
+                backgroundColor: scheme.secondaryContainer,
+                foregroundColor: scheme.onSecondaryContainer,
+                child: Icon(
+                  event.event == 'pause'
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                ),
               ),
+              title: Text(
+                book.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${event.event == 'pause' ? 'Paused' : 'Resumed'} at '
+                '${DurationFormatter.format(Duration(milliseconds: event.positionMs))} · '
+                '${_relativeTime(event.playedAt)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.bodySmall,
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
             ),
-            title: Text(
-              book.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              '${event.event == 'pause' ? 'Paused' : 'Resumed'} at '
-              '${DurationFormatter.format(Duration(milliseconds: event.positionMs))} · '
-              '${_relativeTime(event.playedAt)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: text.bodySmall,
-            ),
-            trailing: const Icon(Icons.chevron_right_rounded),
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _ExpressiveReveal extends StatefulWidget {
+  const _ExpressiveReveal({
+    required this.index,
+    required this.child,
+  });
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_ExpressiveReveal> createState() => _ExpressiveRevealState();
+}
+
+class _ExpressiveRevealState extends State<_ExpressiveReveal> {
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final delay = Duration(milliseconds: 40 + (widget.index * 55));
+    Timer(delay, () {
+      if (!mounted) return;
+      setState(() => _visible = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion) return widget.child;
+
+    return AnimatedSlide(
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      offset: _visible ? Offset.zero : const Offset(0, 0.03),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        opacity: _visible ? 1 : 0,
+        child: widget.child,
+      ),
     );
   }
 }
