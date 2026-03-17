@@ -20,6 +20,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static const _smartRewindOptions = [0, 3, 5, 7, 10, 15, 20];
   static const _themeLabels = ['System', 'Light', 'Dark'];
   final AudioFxService _audioFxService = AudioFxService();
+  late final Future<AudioFxCapabilities> _capabilitiesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _capabilitiesFuture = _audioFxService.getCapabilities();
+  }
 
   Future<void> _pickOption<T>({
     required String title,
@@ -241,89 +248,109 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsSection(
                   title: 'Audio Effects',
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.volume_up_rounded),
-                      title: const Text('Volume boost'),
-                      subtitle: Text('${(volumeBoost * 100).round()}%'),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Slider(
-                        value: volumeBoost,
-                        onChanged: isBusy
-                            ? null
-                            : (value) => ref
-                                .read(volumeBoostProvider.notifier)
-                                .set(value),
-                        min: 0,
-                        max: 1,
-                        divisions: 10,
-                        label: '${(volumeBoost * 100).round()}%',
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.surround_sound_rounded),
-                      title: const Text('Stereo balance'),
-                      subtitle: Text(
-                        stereoBalance == 0
-                            ? 'Centered'
-                            : stereoBalance < 0
-                                ? 'Left ${(stereoBalance.abs() * 100).round()}%'
-                                : 'Right ${(stereoBalance * 100).round()}%',
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Slider(
-                        value: stereoBalance,
-                        onChanged: isBusy
-                            ? null
-                            : (value) => ref
-                                .read(stereoBalanceProvider.notifier)
-                                .set(value),
-                        min: -1,
-                        max: 1,
-                        divisions: 20,
-                      ),
-                    ),
-                    const ListTile(
-                      leading: Icon(Icons.equalizer_rounded),
-                      title: Text('Equalizer'),
-                    ),
-                    SwitchListTile.adaptive(
-                      value: equalizerEnabled,
-                      onChanged: isBusy
-                          ? null
-                          : (value) => ref
-                              .read(equalizerEnabledProvider.notifier)
-                              .set(value),
-                      title: const Text('Enable equalizer'),
-                      subtitle: const Text('Android native EQ presets'),
-                      secondary: const Icon(Icons.graphic_eq_rounded),
-                    ),
-                    _SettingsTile(
-                      icon: Icons.library_music_rounded,
-                      label: 'Equalizer preset',
-                      value: 'Preset #$equalizerPreset',
-                      onTap: isBusy
-                          ? null
-                          : () async {
-                              final presets = await _audioFxService.getEqualizerPresets();
-                              if (!mounted || presets.isEmpty) return;
-                              final options = <int>[];
-                              for (var i = 0; i < presets.length; i++) {
-                                options.add(i);
-                              }
-                              await _pickOption<int>(
-                                title: 'Equalizer preset',
-                                options: options,
-                                current: equalizerPreset.clamp(0, presets.length - 1),
-                                label: (v) => presets[v],
-                                onSelect: (v) => ref
-                                    .read(equalizerPresetProvider.notifier)
-                                    .set(v),
-                              );
-                            },
+                    FutureBuilder<AudioFxCapabilities>(
+                      future: _capabilitiesFuture,
+                      builder: (context, snapshot) {
+                        final capabilities = snapshot.data ?? AudioFxCapabilities.unsupported;
+                        return Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.volume_up_rounded),
+                              title: const Text('Volume boost'),
+                              subtitle: Text(
+                                capabilities.loudnessSupported
+                                    ? '${(volumeBoost * 100).round()}%'
+                                    : 'Not supported on this device',
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Slider(
+                                value: volumeBoost,
+                                onChanged: isBusy || !capabilities.loudnessSupported
+                                    ? null
+                                    : (value) => ref
+                                        .read(volumeBoostProvider.notifier)
+                                        .set(value),
+                                min: 0,
+                                max: 1,
+                                divisions: 10,
+                                label: '${(volumeBoost * 100).round()}%',
+                              ),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.surround_sound_rounded),
+                              title: const Text('Stereo balance'),
+                              subtitle: Text(
+                                capabilities.stereoBalanceSupported
+                                    ? (stereoBalance == 0
+                                        ? 'Centered'
+                                        : stereoBalance < 0
+                                            ? 'Left ${(stereoBalance.abs() * 100).round()}%'
+                                            : 'Right ${(stereoBalance * 100).round()}%')
+                                    : 'Not supported by current playback engine',
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Slider(
+                                value: stereoBalance,
+                                onChanged: isBusy || !capabilities.stereoBalanceSupported
+                                    ? null
+                                    : (value) => ref
+                                        .read(stereoBalanceProvider.notifier)
+                                        .set(value),
+                                min: -1,
+                                max: 1,
+                                divisions: 20,
+                              ),
+                            ),
+                            const ListTile(
+                              leading: Icon(Icons.equalizer_rounded),
+                              title: Text('Equalizer'),
+                            ),
+                            SwitchListTile.adaptive(
+                              value: equalizerEnabled,
+                              onChanged: isBusy || !capabilities.equalizerSupported
+                                  ? null
+                                  : (value) => ref
+                                      .read(equalizerEnabledProvider.notifier)
+                                      .set(value),
+                              title: const Text('Enable equalizer'),
+                              subtitle: Text(
+                                capabilities.equalizerSupported
+                                    ? 'Android native EQ presets'
+                                    : 'Equalizer not available on this device',
+                              ),
+                              secondary: const Icon(Icons.graphic_eq_rounded),
+                            ),
+                            _SettingsTile(
+                              icon: Icons.library_music_rounded,
+                              label: 'Equalizer preset',
+                              value: 'Preset #$equalizerPreset',
+                              onTap: isBusy || !capabilities.equalizerSupported
+                                  ? null
+                                  : () async {
+                                      final presets = await _audioFxService.getEqualizerPresets();
+                                      if (!mounted || presets.isEmpty) return;
+                                      final options = <int>[];
+                                      for (var i = 0; i < presets.length; i++) {
+                                        options.add(i);
+                                      }
+                                      await _pickOption<int>(
+                                        title: 'Equalizer preset',
+                                        options: options,
+                                        current: equalizerPreset.clamp(0, presets.length - 1),
+                                        label: (v) => presets[v],
+                                        onSelect: (v) => ref
+                                            .read(equalizerPresetProvider.notifier)
+                                            .set(v),
+                                      );
+                                    },
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),

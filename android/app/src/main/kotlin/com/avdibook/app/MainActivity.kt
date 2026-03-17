@@ -2,6 +2,7 @@ package com.avdibook.app
 
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Build
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -62,6 +63,22 @@ class MainActivity : AudioServiceActivity() {
 							val boost = call.argument<Int>("gainMb") ?: 0
 							loudnessEnhancer?.setTargetGain(boost)
 							result.success(null)
+						}
+
+						"setStereoBalance" -> {
+							// True channel pan requires deeper renderer access than the current
+							// just_audio session-level effect stack provides.
+							result.success(false)
+						}
+
+						"getCapabilities" -> {
+							result.success(
+								mapOf(
+									"equalizerSupported" to true,
+									"loudnessSupported" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT),
+									"stereoBalanceSupported" to false,
+								),
+							)
 						}
 
 						else -> result.notImplemented()

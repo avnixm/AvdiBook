@@ -179,6 +179,10 @@ class PlayerNotifier extends Notifier<PlayerState> {
       unawaited(_audioFx?.setEqualizerPreset(next));
     });
 
+    ref.listen<double>(stereoBalanceProvider, (_, next) {
+      unawaited(_audioFx?.setStereoBalance(next));
+    });
+
     _player.positionStream.listen((pos) {
       state = state.copyWith(position: pos);
       _refreshDerivedProgress();
