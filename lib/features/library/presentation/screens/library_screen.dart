@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:avdibook/app/theme/app_spacing.dart';
 import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/utils/duration_formatter.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
@@ -21,13 +22,7 @@ enum LibraryViewFilter {
   downloaded,
 }
 
-enum LibrarySortMode {
-  recentAdded,
-  recentPlayed,
-  title,
-  author,
-  progress,
-}
+enum LibrarySortMode { recentAdded, recentPlayed, title, author, progress }
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -40,6 +35,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   BookStatus? _statusFilter;
   LibraryViewFilter _viewFilter = LibraryViewFilter.all;
   LibrarySortMode _sortMode = LibrarySortMode.recentAdded;
+  String? _selectedBookId;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +45,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final analytics = ref.watch(listeningAnalyticsProvider);
     final charactersByBook = ref.watch(characterNotesProvider);
     final analyticsByBook = analytics.byBook;
+    final useSplitLayout =
+        MediaQuery.sizeOf(context).width >= AppSpacing.mediumMaxWidth;
 
     final sorted = [...library];
 
@@ -63,54 +61,85 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       statusCounts[resolved] = (statusCounts[resolved] ?? 0) + 1;
     }
 
-    final filtered = sorted.where((book) {
-      if (_statusFilter == null) return true;
-      final listened = analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
-      return _resolveStatus(book, listened) == _statusFilter;
-    }).where((book) {
-      final listened = analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
-      switch (_viewFilter) {
-        case LibraryViewFilter.all:
-          return true;
-        case LibraryViewFilter.continueListening:
-          return (book.progress > 0 && book.progress < 0.98) ||
-              (listened > Duration.zero && book.progress < 0.98);
-        case LibraryViewFilter.recentPlayed:
-          return analyticsByBook[book.id]?.lastPlayedAt != null ||
-              book.lastPlayedAt != null;
-        case LibraryViewFilter.favorites:
-          return book.isFavorite;
-        case LibraryViewFilter.downloaded:
-          return book.sourcePaths.isNotEmpty;
-      }
-    }).toList()
-      ..sort((a, b) {
-        switch (_sortMode) {
-          case LibrarySortMode.recentAdded:
-            return b.importedAt.compareTo(a.importedAt);
-          case LibrarySortMode.recentPlayed:
-            final aPlayed = analyticsByBook[a.id]?.lastPlayedAt ?? a.lastPlayedAt;
-            final bPlayed = analyticsByBook[b.id]?.lastPlayedAt ?? b.lastPlayedAt;
-            if (aPlayed == null && bPlayed == null) return 0;
-            if (aPlayed == null) return 1;
-            if (bPlayed == null) return -1;
-            return bPlayed.compareTo(aPlayed);
-          case LibrarySortMode.title:
-            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-          case LibrarySortMode.author:
-            final aAuthor = (a.author?.name ?? '').toLowerCase();
-            final bAuthor = (b.author?.name ?? '').toLowerCase();
-            return aAuthor.compareTo(bAuthor);
-          case LibrarySortMode.progress:
-            return b.progress.compareTo(a.progress);
-        }
-      });
+    final continueCount = sorted
+      .where((book) => book.progress > 0 && book.progress < 0.98)
+      .length;
+    final recentCount = sorted
+      .where(
+        (book) =>
+          analyticsByBook[book.id]?.lastPlayedAt != null ||
+          book.lastPlayedAt != null,
+      )
+      .length;
+    final favoritesCount = sorted.where((book) => book.isFavorite).length;
+    final downloadedCount =
+      sorted.where((book) => book.sourcePaths.isNotEmpty).length;
+
+    final filtered =
+        sorted
+            .where((book) {
+              if (_statusFilter == null) return true;
+              final listened =
+                  analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
+              return _resolveStatus(book, listened) == _statusFilter;
+            })
+            .where((book) {
+              final listened =
+                  analyticsByBook[book.id]?.totalDuration ?? Duration.zero;
+              switch (_viewFilter) {
+                case LibraryViewFilter.all:
+                  return true;
+                case LibraryViewFilter.continueListening:
+                  return (book.progress > 0 && book.progress < 0.98) ||
+                      (listened > Duration.zero && book.progress < 0.98);
+                case LibraryViewFilter.recentPlayed:
+                  return analyticsByBook[book.id]?.lastPlayedAt != null ||
+                      book.lastPlayedAt != null;
+                case LibraryViewFilter.favorites:
+                  return book.isFavorite;
+                case LibraryViewFilter.downloaded:
+                  return book.sourcePaths.isNotEmpty;
+              }
+            })
+            .toList()
+          ..sort((a, b) {
+            switch (_sortMode) {
+              case LibrarySortMode.recentAdded:
+                return b.importedAt.compareTo(a.importedAt);
+              case LibrarySortMode.recentPlayed:
+                final aPlayed =
+                    analyticsByBook[a.id]?.lastPlayedAt ?? a.lastPlayedAt;
+                final bPlayed =
+                    analyticsByBook[b.id]?.lastPlayedAt ?? b.lastPlayedAt;
+                if (aPlayed == null && bPlayed == null) return 0;
+                if (aPlayed == null) return 1;
+                if (bPlayed == null) return -1;
+                return bPlayed.compareTo(aPlayed);
+              case LibrarySortMode.title:
+                return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+              case LibrarySortMode.author:
+                final aAuthor = (a.author?.name ?? '').toLowerCase();
+                final bAuthor = (b.author?.name ?? '').toLowerCase();
+                return aAuthor.compareTo(bAuthor);
+              case LibrarySortMode.progress:
+                return b.progress.compareTo(a.progress);
+            }
+          });
+
+    final selectedBook = filtered.firstWhere(
+      (book) => book.id == _selectedBookId,
+      orElse: () => filtered.isNotEmpty ? filtered.first : sorted.first,
+    );
+    final selectedStats = analyticsByBook[selectedBook.id];
+    final selectedListened = selectedStats?.totalDuration ?? Duration.zero;
+    final selectedStatus = _resolveStatus(selectedBook, selectedListened);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
-          SliverAppBar.large(
+          SliverAppBar(
+            pinned: true,
             title: const Text('Library'),
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             elevation: 0,
@@ -151,101 +180,105 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _StatusCounterChip(
-                          icon: Icons.library_books_rounded,
-                          label: 'All',
-                          count: sorted.length,
-                          active: _viewFilter == LibraryViewFilter.all,
-                          onTap: () => setState(() => _viewFilter = LibraryViewFilter.all),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.play_circle_outline_rounded,
-                          label: 'Continue',
-                          count: sorted
-                              .where((book) => book.progress > 0 && book.progress < 0.98)
-                              .length,
-                          active: _viewFilter == LibraryViewFilter.continueListening,
-                          onTap: () => setState(() =>
-                              _viewFilter = LibraryViewFilter.continueListening),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.history_rounded,
-                          label: 'Recent',
-                          count: sorted
-                              .where((book) =>
-                                  analyticsByBook[book.id]?.lastPlayedAt != null ||
-                                  book.lastPlayedAt != null)
-                              .length,
-                          active: _viewFilter == LibraryViewFilter.recentPlayed,
-                          onTap: () => setState(() =>
-                              _viewFilter = LibraryViewFilter.recentPlayed),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.star_rounded,
-                          label: 'Favorites',
-                          count: sorted.where((book) => book.isFavorite).length,
-                          active: _viewFilter == LibraryViewFilter.favorites,
-                          onTap: () =>
-                              setState(() => _viewFilter = LibraryViewFilter.favorites),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.download_done_rounded,
-                          label: 'Downloaded',
-                          count: sorted.where((book) => book.sourcePaths.isNotEmpty).length,
-                          active: _viewFilter == LibraryViewFilter.downloaded,
-                          onTap: () =>
-                              setState(() => _viewFilter = LibraryViewFilter.downloaded),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.fiber_new_rounded,
-                          label: 'New',
-                          count: statusCounts[BookStatus.newBook] ?? 0,
-                          active: _statusFilter == BookStatus.newBook,
-                          onTap: () => setState(() {
-                            _statusFilter = _statusFilter == BookStatus.newBook
-                                ? null
-                                : BookStatus.newBook;
-                          }),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.auto_stories_rounded,
-                          label: 'Started',
-                          count: statusCounts[BookStatus.started] ?? 0,
-                          active: _statusFilter == BookStatus.started,
-                          onTap: () => setState(() {
-                            _statusFilter = _statusFilter == BookStatus.started
-                                ? null
-                                : BookStatus.started;
-                          }),
-                        ),
-                        _StatusCounterChip(
-                          icon: Icons.task_alt_rounded,
-                          label: 'Finished',
-                          count: statusCounts[BookStatus.finished] ?? 0,
-                          active: _statusFilter == BookStatus.finished,
-                          onTap: () => setState(() {
-                            _statusFilter = _statusFilter == BookStatus.finished
-                                ? null
-                                : BookStatus.finished;
-                          }),
-                        ),
-                      ],
-                    ),
-                    if (_statusFilter != null) ...[
-                      const SizedBox(height: 10),
-                      TextButton.icon(
-                        onPressed: () => setState(() => _statusFilter = null),
-                        icon: const Icon(Icons.filter_alt_off_rounded),
-                        label: const Text('Clear filter'),
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          _StatusCounterChip(
+                            icon: Icons.library_books_rounded,
+                            label: 'All',
+                            count: sorted.length,
+                            active: _viewFilter == LibraryViewFilter.all,
+                            onTap: () =>
+                                setState(() => _viewFilter = LibraryViewFilter.all),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusCounterChip(
+                            icon: Icons.play_circle_outline_rounded,
+                            label: 'Continue',
+                            count: continueCount,
+                            active: _viewFilter == LibraryViewFilter.continueListening,
+                            onTap: () => setState(
+                              () =>
+                                  _viewFilter = LibraryViewFilter.continueListening,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusCounterChip(
+                            icon: Icons.history_rounded,
+                            label: 'Recent',
+                            count: recentCount,
+                            active: _viewFilter == LibraryViewFilter.recentPlayed,
+                            onTap: () => setState(
+                              () => _viewFilter = LibraryViewFilter.recentPlayed,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusCounterChip(
+                            icon: Icons.star_rounded,
+                            label: 'Favorites',
+                            count: favoritesCount,
+                            active: _viewFilter == LibraryViewFilter.favorites,
+                            onTap: () =>
+                                setState(() => _viewFilter = LibraryViewFilter.favorites),
+                          ),
+                          const SizedBox(width: 8),
+                          _StatusCounterChip(
+                            icon: Icons.download_done_rounded,
+                            label: 'Downloaded',
+                            count: downloadedCount,
+                            active: _viewFilter == LibraryViewFilter.downloaded,
+                            onTap: () =>
+                                setState(() => _viewFilter = LibraryViewFilter.downloaded),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
+                        PopupMenuButton<BookStatus?>(
+                          initialValue: _statusFilter,
+                          onSelected: (value) =>
+                              setState(() => _statusFilter = value),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem<BookStatus?>(
+                              value: null,
+                              child: Text('All statuses'),
+                            ),
+                            PopupMenuItem<BookStatus?>(
+                              value: BookStatus.newBook,
+                              child: Text(
+                                'New (${statusCounts[BookStatus.newBook] ?? 0})',
+                              ),
+                            ),
+                            PopupMenuItem<BookStatus?>(
+                              value: BookStatus.started,
+                              child: Text(
+                                'Started (${statusCounts[BookStatus.started] ?? 0})',
+                              ),
+                            ),
+                            PopupMenuItem<BookStatus?>(
+                              value: BookStatus.finished,
+                              child: Text(
+                                'Finished (${statusCounts[BookStatus.finished] ?? 0})',
+                              ),
+                            ),
+                          ],
+                          child: Chip(
+                            avatar: const Icon(Icons.tune_rounded, size: 18),
+                            label: Text(
+                              switch (_statusFilter) {
+                                null => 'Status: All',
+                                BookStatus.newBook => 'Status: New',
+                                BookStatus.started => 'Status: Started',
+                                BookStatus.finished => 'Status: Finished',
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
                           'Sort by',
                           style: tt.labelMedium?.copyWith(
@@ -255,7 +288,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         const SizedBox(width: 8),
                         PopupMenuButton<LibrarySortMode>(
                           initialValue: _sortMode,
-                          onSelected: (value) => setState(() => _sortMode = value),
+                          onSelected: (value) =>
+                              setState(() => _sortMode = value),
                           itemBuilder: (context) => const [
                             PopupMenuItem(
                               value: LibrarySortMode.recentAdded,
@@ -279,15 +313,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             ),
                           ],
                           child: Chip(
-                            label: Text(
-                              switch (_sortMode) {
-                                LibrarySortMode.recentAdded => 'Recently added',
-                                LibrarySortMode.recentPlayed => 'Recently played',
-                                LibrarySortMode.title => 'Title',
-                                LibrarySortMode.author => 'Author',
-                                LibrarySortMode.progress => 'Progress',
-                              },
-                            ),
+                            label: Text(switch (_sortMode) {
+                              LibrarySortMode.recentAdded => 'Recently added',
+                              LibrarySortMode.recentPlayed => 'Recently played',
+                              LibrarySortMode.title => 'Title',
+                              LibrarySortMode.author => 'Author',
+                              LibrarySortMode.progress => 'Progress',
+                            }),
                           ),
                         ),
                       ],
@@ -311,6 +343,71 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         ),
                       ),
                     )
+                  : useSplitLayout
+                  ? SliverFillRemaining(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final book = filtered[index];
+                                final stats = analytics.byBook[book.id];
+                                final listened =
+                                    stats?.totalDuration ?? Duration.zero;
+                                final isSelected = book.id == selectedBook.id;
+                                return _LibraryBookTile(
+                                  book: book,
+                                  listened: listened,
+                                  status: _resolveStatus(book, listened),
+                                  characterCount:
+                                      charactersByBook[book.id]?.length ?? 0,
+                                  selected: isSelected,
+                                  onSelect: () =>
+                                      setState(() => _selectedBookId = book.id),
+                                  onOpen: () => context.push(
+                                    AppRoutes.playerPath(book.id),
+                                  ),
+                                  onManageCharacters: () =>
+                                      _showCharactersSheet(context, ref, book),
+                                  onToggleFavorite: () =>
+                                      _toggleFavorite(context, ref, book),
+                                  onRemove: () =>
+                                      _removeBook(context, ref, book),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 4,
+                            child: _LibraryDetailPane(
+                              book: selectedBook,
+                              listened: selectedListened,
+                              status: selectedStatus,
+                              characterCount:
+                                  charactersByBook[selectedBook.id]?.length ??
+                                  0,
+                              onOpen: () => context.push(
+                                AppRoutes.playerPath(selectedBook.id),
+                              ),
+                              onManageCharacters: () => _showCharactersSheet(
+                                context,
+                                ref,
+                                selectedBook,
+                              ),
+                              onToggleFavorite: () =>
+                                  _toggleFavorite(context, ref, selectedBook),
+                              onRemove: () =>
+                                  _removeBook(context, ref, selectedBook),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : SliverList.separated(
                       itemBuilder: (context, index) {
                         final book = filtered[index];
@@ -326,7 +423,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               context.push(AppRoutes.playerPath(book.id)),
                           onManageCharacters: () =>
                               _showCharactersSheet(context, ref, book),
-                            onToggleFavorite: () =>
+                          onToggleFavorite: () =>
                               _toggleFavorite(context, ref, book),
                           onRemove: () => _removeBook(context, ref, book),
                         );
@@ -418,8 +515,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             child: ListTile(
                               title: Text(item.name),
                               subtitle: Text(
-                                [if (item.role != null) item.role!, if (item.note != null) item.note!]
-                                    .join(' • '),
+                                [
+                                  if (item.role != null) item.role!,
+                                  if (item.note != null) item.note!,
+                                ].join(' • '),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -599,6 +698,8 @@ class _LibraryBookTile extends StatelessWidget {
     required this.status,
     required this.characterCount,
     required this.onOpen,
+    this.onSelect,
+    this.selected = false,
     required this.onManageCharacters,
     required this.onToggleFavorite,
     required this.onRemove,
@@ -609,6 +710,8 @@ class _LibraryBookTile extends StatelessWidget {
   final BookStatus status;
   final int characterCount;
   final VoidCallback onOpen;
+  final VoidCallback? onSelect;
+  final bool selected;
   final VoidCallback onManageCharacters;
   final VoidCallback onToggleFavorite;
   final VoidCallback onRemove;
@@ -620,12 +723,12 @@ class _LibraryBookTile extends StatelessWidget {
     final progressPercent = (book.progress.clamp(0.0, 1.0) * 100).round();
 
     return Material(
-      color: cs.surfaceContainerLow,
+      color: selected ? cs.secondaryContainer : cs.surfaceContainerLow,
       borderRadius: BorderRadius.circular(20),
       child: ExpressiveBounce(
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: onOpen,
+          onTap: onSelect ?? onOpen,
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
@@ -696,19 +799,18 @@ class _LibraryBookTile extends StatelessWidget {
                     if (value == 'remove') onRemove();
                   },
                   itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: 'open',
-                      child: Text('Open player'),
-                    ),
+                    PopupMenuItem(value: 'open', child: Text('Open player')),
                     PopupMenuItem(
                       value: 'characters',
                       child: Text('Manage characters'),
                     ),
                     PopupMenuItem(
                       value: 'favorite',
-                      child: Text(book.isFavorite
-                          ? 'Remove from favorites'
-                          : 'Add to favorites'),
+                      child: Text(
+                        book.isFavorite
+                            ? 'Remove from favorites'
+                            : 'Add to favorites',
+                      ),
                     ),
                     PopupMenuItem(
                       value: 'remove',
@@ -719,6 +821,137 @@ class _LibraryBookTile extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryDetailPane extends StatelessWidget {
+  const _LibraryDetailPane({
+    required this.book,
+    required this.listened,
+    required this.status,
+    required this.characterCount,
+    required this.onOpen,
+    required this.onManageCharacters,
+    required this.onToggleFavorite,
+    required this.onRemove,
+  });
+
+  final Audiobook book;
+  final Duration listened;
+  final BookStatus status;
+  final int characterCount;
+  final VoidCallback onOpen;
+  final VoidCallback onManageCharacters;
+  final VoidCallback onToggleFavorite;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final progressPercent = (book.progress.clamp(0.0, 1.0) * 100).round();
+
+    return Card(
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Selected Book', style: tt.labelMedium),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _BookCover(coverPath: book.coverPath),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book.title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        book.author?.name ?? 'Unknown author',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _StatusBadge(status: status),
+                _MetaPill(
+                  icon: Icons.menu_book_rounded,
+                  label: '${book.chapterCount} chapters',
+                ),
+                _MetaPill(
+                  icon: Icons.timelapse_rounded,
+                  label: '$progressPercent% complete',
+                ),
+                _MetaPill(
+                  icon: Icons.graphic_eq_rounded,
+                  label: 'Listened ${DurationFormatter.formatHuman(listened)}',
+                ),
+                if (characterCount > 0)
+                  _MetaPill(
+                    icon: Icons.groups_rounded,
+                    label: '$characterCount characters',
+                  ),
+              ],
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Open Player'),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onManageCharacters,
+                    icon: const Icon(Icons.groups_rounded),
+                    label: const Text('Characters'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: onToggleFavorite,
+                  icon: Icon(
+                    book.isFavorite
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -745,12 +978,13 @@ class _StatusCounterChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return ExpressiveBounce(
-      child: ChoiceChip(
+      child: FilterChip(
         selected: active,
         onSelected: (_) => onTap(),
         avatar: Icon(icon, size: 16),
         label: Text('$label ($count)'),
         selectedColor: cs.secondaryContainer,
+        checkmarkColor: cs.onSecondaryContainer,
       ),
     );
   }
@@ -768,20 +1002,20 @@ class _StatusBadge extends StatelessWidget {
 
     final (icon, bg, fg) = switch (status) {
       BookStatus.newBook => (
-          Icons.fiber_new_rounded,
-          cs.tertiaryContainer,
-          cs.onTertiaryContainer,
-        ),
+        Icons.fiber_new_rounded,
+        cs.tertiaryContainer,
+        cs.onTertiaryContainer,
+      ),
       BookStatus.started => (
-          Icons.auto_stories_rounded,
-          cs.primaryContainer,
-          cs.onPrimaryContainer,
-        ),
+        Icons.auto_stories_rounded,
+        cs.primaryContainer,
+        cs.onPrimaryContainer,
+      ),
       BookStatus.finished => (
-          Icons.task_alt_rounded,
-          cs.secondaryContainer,
-          cs.onSecondaryContainer,
-        ),
+        Icons.task_alt_rounded,
+        cs.secondaryContainer,
+        cs.onSecondaryContainer,
+      ),
     };
 
     return Container(
@@ -826,10 +1060,10 @@ class _BookCover extends StatelessWidget {
         child: hasImage
             ? Image.file(File(coverPath!), fit: BoxFit.cover)
             : Container(
-                color: cs.primaryContainer.withValues(alpha: 0.35),
+                color: cs.primaryContainer,
                 child: Icon(
                   Icons.auto_stories_rounded,
-                  color: cs.primary,
+                  color: cs.onPrimaryContainer,
                   size: 26,
                 ),
               ),
@@ -862,9 +1096,7 @@ class _MetaPill extends StatelessWidget {
           const SizedBox(width: 5),
           Text(
             label,
-            style: tt.labelSmall?.copyWith(
-              color: cs.onSurfaceVariant,
-            ),
+            style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),

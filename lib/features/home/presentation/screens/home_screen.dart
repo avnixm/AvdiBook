@@ -7,11 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:avdibook/app/theme/app_spacing.dart';
 import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/utils/duration_formatter.dart';
-import 'package:avdibook/core/widgets/app_scaffold.dart';
-import 'package:avdibook/core/widgets/expressive_bounce.dart';
-import 'package:avdibook/core/widgets/section_header.dart';
-import 'package:avdibook/core/widgets/soft_icon_button.dart';
-import 'package:avdibook/core/widgets/soft_pill_button.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
 import 'package:avdibook/features/setup/presentation/providers/setup_controller.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
@@ -23,14 +18,13 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
     final library = ref.watch(libraryProvider);
     final analytics = ref.watch(listeningAnalyticsProvider);
     final setupState = ref.watch(setupControllerProvider);
     final playbackHistory = ref.watch(playbackHistoryProvider);
     final isBusy = setupState.isBusy;
     final statusCounts = _buildStatusCounts(library, analytics.byBook);
+
     final continueListening = library
         .where((b) => b.progress > 0 && b.progress < 0.98)
         .toList()
@@ -43,319 +37,114 @@ class HomeScreen extends ConsumerWidget {
         return bPlayed.compareTo(aPlayed);
       });
 
-    final recentlyPlayed = library
-        .where((b) =>
-            analytics.byBook[b.id]?.lastPlayedAt != null || b.lastPlayedAt != null)
-        .toList()
-      ..sort((a, b) {
-        final aPlayed = analytics.byBook[a.id]?.lastPlayedAt ?? a.lastPlayedAt;
-        final bPlayed = analytics.byBook[b.id]?.lastPlayedAt ?? b.lastPlayedAt;
-        if (aPlayed == null && bPlayed == null) return 0;
-        if (aPlayed == null) return 1;
-        if (bPlayed == null) return -1;
-        return bPlayed.compareTo(aPlayed);
-      });
-
-    final recentlyAdded = [...library]
-      ..sort((a, b) => b.importedAt.compareTo(a.importedAt));
-
     final historyItems = playbackHistory
-      .where((entry) => library.any((book) => book.id == entry.bookId))
-      .take(12)
-      .toList();
+        .where((entry) => library.any((book) => book.id == entry.bookId))
+        .take(12)
+        .toList();
 
     void importFiles() =>
         ref.read(setupControllerProvider.notifier).importFiles();
     void importDirectory() =>
         ref.read(setupControllerProvider.notifier).importDirectory();
-    void comingSoon(String label) =>
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$label — coming soon')),
-        );
 
-    return AppScaffold(
-      showAppBar: false,
-      body: ListView(
-        children: [
-          Row(
-            children: [
-              SoftIconButton(
-                icon: Icons.menu_rounded,
-                onPressed: () => comingSoon('Navigation drawer'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  library.isEmpty ? 'Welcome' : 'Welcome back',
-                  style: text.titleMedium,
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            title: Text(_greeting(library.isEmpty)),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton.filledTonal(
+                  onPressed: () => context.go(AppRoutes.settings),
+                  icon: const Icon(Icons.settings_outlined),
                 ),
-              ),
-              SoftIconButton(
-                icon: Icons.settings_outlined,
-                onPressed: () => context.go(AppRoutes.settings),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.xxl),
-          Text(
-            library.isEmpty
-                ? 'Bring your audiobooks into AvdiBook.'
-                : 'Find your next listening session.',
-            style: text.headlineMedium,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (library.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(30),
-              ),
+          SliverPadding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
+            sliver: SliverToBoxAdapter(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.library_music_rounded,
-                    size: 34,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'No audiobooks here',
-                    style: text.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Import files or choose a folder to build your library. You can add more books anytime.',
-                    style: text.bodyMedium,
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      SoftPillButton(
-                        label: 'Import audiobooks',
-                        icon: Icons.download_rounded,
-                        onPressed: isBusy ? () {} : importFiles,
+                  if (library.isEmpty)
+                    _EmptyState(
+                      isBusy: isBusy,
+                      errorMessage: setupState.errorMessage,
+                      onImportFiles: importFiles,
+                      onImportDirectory: importDirectory,
+                    )
+                  else ...[
+                    const SizedBox(height: AppSpacing.md),
+
+                    const _SectionTitle(title: 'Continue listening'),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (continueListening.isNotEmpty)
+                      _ContinueListeningCard(
+                        book: continueListening.first,
+                        lastPlayedAt:
+                            analytics.byBook[continueListening.first.id]?.lastPlayedAt ??
+                            continueListening.first.lastPlayedAt,
+                        onTap: (book) =>
+                            context.push(AppRoutes.playerPath(book.id)),
+                      )
+                    else
+                      Card(
+                        margin: EdgeInsets.zero,
+                        child: ListTile(
+                          leading: const Icon(Icons.play_circle_outline_rounded),
+                          title: const Text('No recent listening yet'),
+                          subtitle: const Text('Start a book and it will appear here.'),
+                          onTap: () => context.go(AppRoutes.library),
+                        ),
                       ),
-                      SoftPillButton(
-                        label: 'Choose folder',
-                        icon: Icons.folder_rounded,
-                        onPressed: isBusy ? () {} : importDirectory,
+
+                    const SizedBox(height: AppSpacing.xl),
+                    _ListeningAnalyticsCard(
+                      totalListening: analytics.totalListeningDuration,
+                      averageSession: analytics.averageSessionDuration,
+                      sessions: analytics.totalSessions,
+                    ),
+
+                    if (historyItems.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.xl),
+                      const _SectionTitle(title: 'Playback history'),
+                      const SizedBox(height: AppSpacing.sm),
+                      _PlaybackHistoryList(
+                        historyItems: historyItems,
+                        library: library,
+                        onTap: (book) =>
+                            context.push(AppRoutes.playerPath(book.id)),
                       ),
                     ],
-                  ),
-                  if (isBusy) ...[
-                    const SizedBox(height: 14),
-                    const LinearProgressIndicator(),
+
+                    const SizedBox(height: AppSpacing.xl),
+                    _LibraryStatusOverview(counts: statusCounts),
                   ],
-                  if (setupState.errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      setupState.errorMessage!,
-                      style: text.bodySmall
-                          ?.copyWith(color: scheme.error),
-                    ),
-                  ],
+                  const SizedBox(height: AppSpacing.xxl),
                 ],
               ),
-            )
-          else ...[
-            _ExpressiveBounceIn(
-              delayMs: 40,
-              child: _ListeningAnalyticsCard(
-                totalListening: analytics.totalListeningDuration,
-                averageSession: analytics.averageSessionDuration,
-                sessions: analytics.totalSessions,
-              ),
-            ),
-            const SizedBox(height: 14),
-            _ExpressiveBounceIn(
-              delayMs: 80,
-              child: _LibraryStatusOverview(counts: statusCounts),
-            ),
-            const SizedBox(height: 14),
-            _ExpressiveBounceIn(
-              delayMs: 120,
-              child: _RecentHeroCard(
-                title: library.first.title,
-                author: library.first.author?.name ?? 'Unknown author',
-                chapterCount: library.first.chapterCount,
-                coverPath: library.first.coverPath,
-                onOpenPlayer:
-                    () => context.push(AppRoutes.playerPath(library.first.id)),
-              ),
-            ),
-            if (continueListening.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionHeader(title: 'Continue Listening'),
-              const SizedBox(height: 8),
-              _BookRail(
-                books: continueListening.take(10).toList(),
-                onTap: (book) => context.push(AppRoutes.playerPath(book.id)),
-              ),
-            ],
-            if (recentlyPlayed.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionHeader(title: 'Recently Played'),
-              const SizedBox(height: 8),
-              _BookRail(
-                books: recentlyPlayed.take(10).toList(),
-                onTap: (book) => context.push(AppRoutes.playerPath(book.id)),
-              ),
-            ],
-            if (recentlyAdded.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionHeader(title: 'Recently Added'),
-              const SizedBox(height: 8),
-              _BookRail(
-                books: recentlyAdded.take(10).toList(),
-                onTap: (book) => context.push(AppRoutes.playerPath(book.id)),
-              ),
-            ],
-            if (historyItems.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              SectionHeader(title: 'Playback History'),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 112,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: historyItems.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) {
-                    final event = historyItems[index];
-                    final book = library.firstWhere((b) => b.id == event.bookId);
-                    return SizedBox(
-                      width: 250,
-                      child: ExpressiveBounce(
-                        child: Card(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () => context.push(AppRoutes.playerPath(book.id)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    book.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: text.titleSmall,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${event.event == 'pause' ? 'Paused' : 'Resumed'} at ${DurationFormatter.format(Duration(milliseconds: event.positionMs))}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: text.bodySmall,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _relativeTime(event.playedAt),
-                                    style: text.labelSmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
-          const SizedBox(height: AppSpacing.xxl),
-          SectionHeader(
-            title: library.isEmpty
-                ? 'How AvdiBook will organize your library'
-                : 'Imported books',
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          SizedBox(
-            height: 188,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: library.isEmpty ? 4 : library.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 14),
-              itemBuilder: (context, index) {
-                final item = library.isEmpty ? null : library[index];
-
-                return ExpressiveBounce(
-                  enabled: item != null,
-                  child: Material(
-                    color: scheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(28),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(28),
-                      onTap: item != null
-                          ? () => context.push(AppRoutes.playerPath(item.id))
-                          : null,
-                      child: Container(
-                        width: 130,
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: scheme.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.headphones_rounded,
-                                  color: scheme.primary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              item?.title ?? 'Your books',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: text.titleMedium,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              item == null
-                                  ? 'Imported titles'
-                                  : '${item.author?.name ?? 'Unknown author'} • ${item.chapterCount} ch',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: text.bodySmall,
-                            ),
-                            if (item != null) ...[
-                              const SizedBox(height: 6),
-                              _InlineBookStatusPill(
-                                status: _resolveStatus(
-                                  item,
-                                  analytics
-                                          .byBook[item.id]
-                                          ?.totalDuration ??
-                                      Duration.zero,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
             ),
           ),
         ],
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+String _greeting(bool isEmpty) {
+  if (isEmpty) return 'Welcome to AvdiBook';
+  final hour = DateTime.now().hour;
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 String _relativeTime(DateTime value) {
@@ -392,117 +181,306 @@ BookStatus _resolveStatus(Audiobook book, Duration listened) {
   return BookStatus.newBook;
 }
 
-class _ExpressiveBounceIn extends StatelessWidget {
-  const _ExpressiveBounceIn({
-    required this.child,
-    this.delayMs = 0,
+// ---------------------------------------------------------------------------
+// Widgets
+// ---------------------------------------------------------------------------
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.isBusy,
+    required this.errorMessage,
+    required this.onImportFiles,
+    required this.onImportDirectory,
   });
 
-  final Widget child;
-  final int delayMs;
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 520 + delayMs),
-      curve: Curves.easeOutBack,
-      builder: (context, value, builtChild) {
-        final clamped = value.clamp(0.0, 1.0);
-        final translateY = (1 - clamped) * 18;
-        final scale = 0.97 + (clamped * 0.03);
-
-        return Transform.translate(
-          offset: Offset(0, translateY),
-          child: Transform.scale(
-            scale: scale,
-            child: Opacity(
-              opacity: clamped,
-              child: builtChild,
-            ),
-          ),
-        );
-      },
-      child: child,
-    );
-  }
-}
-
-class _BookRail extends StatelessWidget {
-  const _BookRail({
-    required this.books,
-    required this.onTap,
-  });
-
-  final List<Audiobook> books;
-  final void Function(Audiobook book) onTap;
+  final bool isBusy;
+  final String? errorMessage;
+  final VoidCallback onImportFiles;
+  final VoidCallback onImportDirectory;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return SizedBox(
-      height: 172,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: books.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          final book = books[index];
-          return ExpressiveBounce(
-            child: Material(
-              color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(22),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(22),
-                onTap: () => onTap(book),
-                child: SizedBox(
-                  width: 138,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: scheme.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.headphones_rounded,
-                              color: scheme.primary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          book.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.titleSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${(book.progress * 100).round()}% done',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      color: scheme.surfaceContainerLow,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [scheme.primaryContainer, scheme.tertiaryContainer],
               ),
             ),
-          );
-        },
+            child: Row(
+              children: [
+                Icon(
+                  Icons.library_music_rounded,
+                  size: 30,
+                  color: scheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Start your listening library',
+                  style: text.titleMedium?.copyWith(
+                    color: scheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('No audiobooks found', style: text.titleLarge),
+                const SizedBox(height: 8),
+                Text(
+                  'Import files or choose a folder to build your library. '
+                  'You can always add more later.',
+                  style: text.bodyMedium,
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: isBusy ? null : onImportFiles,
+                      icon: const Icon(Icons.upload_file_rounded),
+                      label: const Text('Import files'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: isBusy ? null : onImportDirectory,
+                      icon: const Icon(Icons.folder_open_rounded),
+                      label: const Text('Choose folder'),
+                    ),
+                  ],
+                ),
+                if (isBusy) ...[
+                  const SizedBox(height: 14),
+                  const LinearProgressIndicator(),
+                ],
+                if (errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    errorMessage!,
+                    style: text.bodySmall?.copyWith(color: scheme.error),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
+// Continue listening -----------------------------------------------------------
+
+class _ContinueListeningCard extends StatelessWidget {
+  const _ContinueListeningCard({
+    required this.book,
+    required this.lastPlayedAt,
+    required this.onTap,
+  });
+
+  final Audiobook book;
+  final DateTime? lastPlayedAt;
+  final void Function(Audiobook) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final progress = (book.progress * 100).round();
+    final lastPlayedText =
+        lastPlayedAt == null ? 'Not played yet' : _relativeTime(lastPlayedAt!);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      color: scheme.surfaceContainerLow,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onTap(book),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              _BookCover(
+                book: book,
+                width: 82,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      book.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      book.author?.name ?? 'Unknown author',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(value: book.progress.clamp(0, 1)),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$progress% complete · Last listened $lastPlayedText',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.play_circle_fill_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Playback history -------------------------------------------------------
+
+class _PlaybackHistoryList extends StatelessWidget {
+  const _PlaybackHistoryList({
+    required this.historyItems,
+    required this.library,
+    required this.onTap,
+  });
+
+  final List<PlaybackHistoryEntry> historyItems;
+  final List<Audiobook> library;
+  final void Function(Audiobook) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Column(
+      children: historyItems.take(6).map((event) {
+        final book = library.firstWhere((b) => b.id == event.bookId);
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          color: scheme.surfaceContainerLow,
+          child: ListTile(
+            onTap: () => onTap(book),
+            leading: CircleAvatar(
+              backgroundColor: scheme.secondaryContainer,
+              foregroundColor: scheme.onSecondaryContainer,
+              child: Icon(
+                event.event == 'pause'
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+              ),
+            ),
+            title: Text(
+              book.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              '${event.event == 'pause' ? 'Paused' : 'Resumed'} at '
+              '${DurationFormatter.format(Duration(milliseconds: event.positionMs))} · '
+              '${_relativeTime(event.playedAt)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodySmall,
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Text(
+      title,
+      style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+}
+
+class _BookCover extends StatelessWidget {
+  const _BookCover({
+    required this.book,
+    required this.width,
+    required this.borderRadius,
+  });
+
+  final Audiobook book;
+  final double width;
+  final BorderRadius borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasImage =
+        book.coverPath != null && File(book.coverPath!).existsSync();
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: SizedBox(
+        width: width,
+        height: width * 1.35,
+        child: hasImage
+            ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [scheme.primaryContainer, scheme.tertiaryContainer],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Icon(
+                  Icons.headphones_rounded,
+                  size: 32,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+// Analytics card --------------------------------------------------------------
 
 class _ListeningAnalyticsCard extends StatelessWidget {
   const _ListeningAnalyticsCard({
@@ -520,65 +498,144 @@ class _ListeningAnalyticsCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      color: scheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(
-          colors: [
-            scheme.primaryContainer.withValues(alpha: 0.55),
-            scheme.surfaceContainerHigh,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.insights_rounded,
+                      size: 18,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Listening analytics',
+                      style: text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _AnalyticsStat(
+                    label: 'Total time',
+                    value: DurationFormatter.formatHuman(totalListening),
+                    icon: Icons.graphic_eq_rounded,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _AnalyticsStat(
+                    label: 'Avg session',
+                    value: DurationFormatter.formatHuman(averageSession),
+                    icon: Icons.schedule_rounded,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _AnalyticsStat(
+                    label: 'Sessions',
+                    value: '$sessions',
+                    icon: Icons.repeat_rounded,
+                  ),
+                ),
+              ],
+            ),
           ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsStat extends StatelessWidget {
+  const _AnalyticsStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.35),
-          width: 0.8,
+          color: scheme.outlineVariant.withValues(alpha: 0.6),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Listening Analytics',
-            style: text.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer,
+              shape: BoxShape.circle,
             ),
+            child: Icon(icon, size: 16, color: scheme.onSecondaryContainer),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _AnalyticsStat(
-                  label: 'Total time',
-                  value: DurationFormatter.formatHuman(totalListening),
-                  icon: Icons.graphic_eq_rounded,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _AnalyticsStat(
-                  label: 'Avg session',
-                  value: DurationFormatter.formatHuman(averageSession),
-                  icon: Icons.schedule_rounded,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _AnalyticsStat(
-                  label: 'Sessions',
-                  value: '$sessions',
-                  icon: Icons.repeat_rounded,
-                ),
-              ),
-            ],
+          const SizedBox(height: 10),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),
     );
   }
 }
+
+// Library status overview -----------------------------------------------------
 
 class _LibraryStatusOverview extends StatelessWidget {
   const _LibraryStatusOverview({required this.counts});
@@ -593,8 +650,8 @@ class _LibraryStatusOverview extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(20),
+        color: scheme.surfaceContainer,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -672,280 +729,6 @@ class _StatusSummaryPill extends StatelessWidget {
             style: text.labelMedium?.copyWith(
               color: foreground,
               fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InlineBookStatusPill extends StatelessWidget {
-  const _InlineBookStatusPill({required this.status});
-
-  final BookStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    final (color, foreground) = switch (status) {
-      BookStatus.newBook => (
-          scheme.tertiaryContainer,
-          scheme.onTertiaryContainer,
-        ),
-      BookStatus.started => (
-          scheme.primaryContainer,
-          scheme.onPrimaryContainer,
-        ),
-      BookStatus.finished => (
-          scheme.secondaryContainer,
-          scheme.onSecondaryContainer,
-        ),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        status.label,
-        style: text.labelSmall?.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _AnalyticsStat extends StatelessWidget {
-  const _AnalyticsStat({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: scheme.primary),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecentHeroCard extends StatelessWidget {
-  const _RecentHeroCard({
-    required this.title,
-    required this.author,
-    required this.chapterCount,
-    required this.coverPath,
-    required this.onOpenPlayer,
-  });
-
-  final String title;
-  final String author;
-  final int chapterCount;
-  final String? coverPath;
-  final VoidCallback onOpenPlayer;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(34),
-        gradient: LinearGradient(
-          colors: [
-            scheme.surfaceContainerHigh,
-            scheme.surfaceContainerHighest,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.35),
-          width: 0.8,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recently imported',
-            style: text.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.1,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _BookCoverThumb(coverPath: coverPath),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _InfoChip(
-                          icon: Icons.person_rounded,
-                          label: author,
-                        ),
-                        _InfoChip(
-                          icon: Icons.menu_book_rounded,
-                          label: '$chapterCount chapter(s)',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    FilledButton.icon(
-                      onPressed: onOpenPlayer,
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('Continue listening'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(46),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BookCoverThumb extends StatelessWidget {
-  const _BookCoverThumb({required this.coverPath});
-
-  final String? coverPath;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final hasImage = coverPath != null && File(coverPath!).existsSync();
-
-    return Container(
-      width: 116,
-      height: 156,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        color: scheme.primaryContainer.withValues(alpha: 0.35),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-            color: Colors.black.withValues(alpha: 0.16),
-          ),
-        ],
-      ),
-      child: hasImage
-          ? Image.file(File(coverPath!), fit: BoxFit.cover)
-          : Icon(
-              Icons.auto_stories_rounded,
-              size: 42,
-              color: scheme.primary,
-            ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 220),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.35),
-          width: 0.8,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: scheme.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: text.labelMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
             ),
           ),
         ],

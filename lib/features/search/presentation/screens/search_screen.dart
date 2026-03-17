@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:avdibook/app/theme/app_spacing.dart';
 import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
 import 'package:avdibook/shared/providers/library_provider.dart';
@@ -19,6 +20,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _queryController = TextEditingController();
   SearchSortMode _sortMode = SearchSortMode.relevance;
+  String? _selectedBookId;
 
   @override
   void dispose() {
@@ -33,6 +35,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final library = ref.watch(libraryProvider);
     final analytics = ref.watch(listeningAnalyticsProvider).byBook;
     final query = _queryController.text.trim().toLowerCase();
+    final useSplitLayout =
+        MediaQuery.sizeOf(context).width >= AppSpacing.mediumMaxWidth;
 
     final results = [...library]
       ..sort((a, b) {
@@ -66,15 +70,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ? results
         : results.where((book) => _score(book, query) > 0).toList();
 
+    final selectedBook = filtered.firstWhere(
+      (book) => book.id == _selectedBookId,
+      orElse: () => filtered.isNotEmpty ? filtered.first : results.first,
+    );
+
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Search'),
+        elevation: 0,
+      ),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
-          SliverAppBar.large(
-            title: const Text('Search'),
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            elevation: 0,
-          ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
@@ -83,8 +91,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   controller: _queryController,
                   onChanged: (_) => setState(() {}),
                   hintText: 'Search books, authors, narrators...',
-                  leading: Icon(Icons.search_rounded,
-                      color: cs.onSurface.withValues(alpha: 0.5)),
+                  leading: Icon(
+                    Icons.search_rounded,
+                    color: cs.onSurface.withValues(alpha: 0.5),
+                  ),
                   trailing: query.isEmpty
                       ? null
                       : [
@@ -97,8 +107,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                         ],
                   elevation: const WidgetStatePropertyAll(0),
-                  backgroundColor:
-                      WidgetStatePropertyAll(cs.surfaceContainerHighest),
+                  backgroundColor: WidgetStatePropertyAll(
+                    cs.surfaceContainerHighest,
+                  ),
                   shape: WidgetStatePropertyAll(
                     RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -141,15 +152,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ),
                       ],
                       child: Chip(
-                        label: Text(
-                          switch (_sortMode) {
-                            SearchSortMode.relevance => 'Relevance',
-                            SearchSortMode.recentPlayed => 'Recently played',
-                            SearchSortMode.recentAdded => 'Recently added',
-                            SearchSortMode.title => 'Title',
-                            SearchSortMode.author => 'Author',
-                          },
-                        ),
+                        label: Text(switch (_sortMode) {
+                          SearchSortMode.relevance => 'Relevance',
+                          SearchSortMode.recentPlayed => 'Recently played',
+                          SearchSortMode.recentAdded => 'Recently added',
+                          SearchSortMode.title => 'Title',
+                          SearchSortMode.author => 'Author',
+                        }),
                       ),
                     ),
                   ],
@@ -167,29 +176,55 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ),
                     ),
                   )
+                else if (useSplitLayout)
+                  SizedBox(
+                    height: MediaQuery.sizeOf(context).height * 0.62,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 6,
+                          child: ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, index) {
+                              final book = filtered[index];
+                              final isSelected = book.id == selectedBook.id;
+                              return _SearchResultTile(
+                                book: book,
+                                selected: isSelected,
+                                onTap: () =>
+                                    setState(() => _selectedBookId = book.id),
+                                onOpen: () =>
+                                    context.push(AppRoutes.playerPath(book.id)),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 4,
+                          child: _SearchDetailPane(
+                            book: selectedBook,
+                            onOpen: () => context.push(
+                              AppRoutes.playerPath(selectedBook.id),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
                 else
                   ...filtered.map(
                     (book) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: Material(
-                        color: cs.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(16),
-                        child: ListTile(
-                          onTap: () => context.push(AppRoutes.playerPath(book.id)),
-                          leading: Icon(
-                            book.isFavorite
-                                ? Icons.star_rounded
-                                : Icons.menu_book_rounded,
-                          ),
-                          title: Text(book.title),
-                          subtitle: Text(
-                            [
-                              book.author?.name ?? 'Unknown author',
-                              '${book.chapterCount} chapters',
-                            ].join(' • '),
-                          ),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                        ),
+                      child: _SearchResultTile(
+                        book: book,
+                        selected: false,
+                        onTap: () =>
+                            context.push(AppRoutes.playerPath(book.id)),
+                        onOpen: () =>
+                            context.push(AppRoutes.playerPath(book.id)),
                       ),
                     ),
                   ),
@@ -221,5 +256,96 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (genre.contains(query)) score += 8;
 
     return score;
+  }
+}
+
+class _SearchResultTile extends StatelessWidget {
+  const _SearchResultTile({
+    required this.book,
+    required this.selected,
+    required this.onTap,
+    required this.onOpen,
+  });
+
+  final Audiobook book;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Material(
+      color: selected ? cs.secondaryContainer : cs.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      child: ListTile(
+        onTap: onTap,
+        leading: Icon(
+          book.isFavorite ? Icons.star_rounded : Icons.menu_book_rounded,
+        ),
+        title: Text(book.title),
+        subtitle: Text(
+          [
+            book.author?.name ?? 'Unknown author',
+            '${book.chapterCount} chapters',
+          ].join(' • '),
+        ),
+        trailing: IconButton(
+          onPressed: onOpen,
+          icon: const Icon(Icons.play_arrow_rounded),
+          tooltip: 'Open player',
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchDetailPane extends StatelessWidget {
+  const _SearchDetailPane({required this.book, required this.onOpen});
+
+  final Audiobook book;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Selected Result', style: tt.labelMedium),
+            const SizedBox(height: 12),
+            Text(
+              book.title,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              book.author?.name ?? 'Unknown author',
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${book.chapterCount} chapters',
+              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Open Player'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
