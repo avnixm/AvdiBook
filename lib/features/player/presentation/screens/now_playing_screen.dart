@@ -7,6 +7,7 @@ import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/utils/duration_formatter.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:avdibook/features/player/presentation/providers/cover_palette_provider.dart';
+import 'package:avdibook/features/player/presentation/providers/cast_session_provider.dart';
 import 'package:avdibook/features/player/presentation/providers/player_provider.dart';
 import 'package:avdibook/features/player/presentation/providers/sleep_timer_provider.dart';
 import 'package:avdibook/features/audiobooks/domain/models/audiobook.dart';
@@ -340,6 +341,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     final skipFwd = ref.watch(skipForwardSecsProvider);
     final skipBwd = ref.watch(skipBackwardSecsProvider);
     final sleepTimer = ref.watch(sleepTimerProvider);
+    final castState = ref.watch(castSessionProvider);
 
     ref.listen<int>(
       playerProvider.select((s) => s.currentChapterIndex),
@@ -406,6 +408,50 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                     scheme: scheme,
                     semanticsLabel: 'Volume controls',
                     onTap: () => _showVolumeSheet(playerState.volume),
+                  ),
+                  const SizedBox(width: 8),
+                  _RoundedIconButton(
+                    icon: castState.connectedDevice == null
+                        ? Icons.cast_rounded
+                        : Icons.cast_connected_rounded,
+                    scheme: scheme,
+                    semanticsLabel: castState.connectedDevice == null
+                        ? 'Cast playback'
+                        : 'Disconnect cast playback',
+                    onTap: () async {
+                      final notifier = ref.read(castSessionProvider.notifier);
+                      if (castState.connectedDevice != null) {
+                        await notifier.disconnect();
+                        return;
+                      }
+                      await notifier.refreshDevices();
+                      if (!context.mounted) return;
+                      final latest = ref.read(castSessionProvider);
+                      if (latest.devices.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('No Chromecast devices discovered yet.'),
+                          ),
+                        );
+                        return;
+                      }
+                      final selected = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => SimpleDialog(
+                          title: const Text('Cast to device'),
+                          children: [
+                            for (final device in latest.devices)
+                              SimpleDialogOption(
+                                onPressed: () => Navigator.of(ctx).pop(device.id),
+                                child: Text(device.name),
+                              ),
+                          ],
+                        ),
+                      );
+                      if (selected == null) return;
+                      final match = latest.devices.firstWhere((d) => d.id == selected);
+                      await notifier.connect(match);
+                    },
                   ),
                   const SizedBox(width: 8),
                   _RoundedIconButton(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:avdibook/core/constants/app_constants.dart';
 import 'package:avdibook/core/widgets/expressive_bounce.dart';
 import 'package:avdibook/features/player/data/services/audio_fx_service.dart';
+import 'package:avdibook/features/player/presentation/providers/cast_session_provider.dart';
 import 'package:avdibook/features/setup/presentation/providers/setup_controller.dart';
 import 'package:avdibook/shared/providers/app_state_provider.dart';
 
@@ -76,6 +77,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final equalizerEnabled = ref.watch(equalizerEnabledProvider);
     final equalizerPreset = ref.watch(equalizerPresetProvider);
     final reducedMotion = ref.watch(reducedMotionProvider);
+    final castState = ref.watch(castSessionProvider);
     final savedFolder = ref.watch(scanFolderPathProvider);
     final setupState = ref.watch(setupControllerProvider);
     final isBusy = setupState.isBusy;
@@ -352,6 +354,103 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         );
                       },
                     ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _SettingsSection(
+                  title: 'Cast',
+                  children: [
+                    _SettingsTile(
+                      icon: castState.connectedDevice == null
+                          ? Icons.cast_rounded
+                          : Icons.cast_connected_rounded,
+                      label: castState.connectedDevice == null
+                          ? 'Chromecast'
+                          : 'Connected',
+                      subtitle: castState.connectedDevice?.name ??
+                          (castState.devices.isEmpty
+                              ? 'No devices found'
+                              : '${castState.devices.length} device(s) available'),
+                      onTap: isBusy
+                          ? null
+                          : () async {
+                              final notifier = ref.read(castSessionProvider.notifier);
+                              await notifier.refreshDevices();
+                              if (!mounted) return;
+
+                              final latest = ref.read(castSessionProvider);
+                              if (latest.connectedDevice != null) {
+                                final disconnect = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Disconnect Chromecast'),
+                                    content: Text(
+                                      'Disconnect from ${latest.connectedDevice!.name}?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () => Navigator.of(ctx).pop(true),
+                                        child: const Text('Disconnect'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (disconnect == true) {
+                                  await notifier.disconnect();
+                                }
+                                return;
+                              }
+
+                              if (latest.devices.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('No Chromecast devices discovered yet.'),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final selected = await showDialog<String>(
+                                context: context,
+                                builder: (ctx) => SimpleDialog(
+                                  title: const Text('Cast to device'),
+                                  children: [
+                                    for (final device in latest.devices)
+                                      SimpleDialogOption(
+                                        onPressed: () => Navigator.of(ctx).pop(device.id),
+                                        child: Text(device.name),
+                                      ),
+                                  ],
+                                ),
+                              );
+
+                              if (selected == null) return;
+                              final match = latest.devices.firstWhere(
+                                (d) => d.id == selected,
+                              );
+                              await notifier.connect(match);
+                            },
+                    ),
+                    if (castState.isDiscovering)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: LinearProgressIndicator(),
+                      ),
+                    if (castState.error != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Text(
+                          castState.error!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Theme.of(context).colorScheme.error),
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
